@@ -18,6 +18,52 @@ data class NatNumberEnvironment<T>(
     }
 }
 
+data class UByteBigInt(val bytes: List<UByte>)
+
+fun incWithCarry(b: UByte): Pair<UByte, Boolean> =
+    if (b < UByte.MAX_VALUE) {
+        b.inc() to false
+    } else {
+        UByte.MIN_VALUE to true
+    }
+
+fun UByteBigInt.Succ(): UByteBigInt {
+    val copyBytes = this.bytes.toMutableList()
+    for (i in copyBytes.indices) {
+        val (b, carry) = incWithCarry(copyBytes[i])
+        copyBytes[i] = b
+
+        if (!carry) {
+            break
+        }
+
+        if (i == copyBytes.size-1) {
+            copyBytes.add(1u)
+        }
+    }
+    return UByteBigInt(copyBytes)
+}
+
+fun decWithCarry(b: UByte): Pair<UByte, Boolean>
+    = if (b > UByte.MIN_VALUE) {
+        b.dec() to false
+    } else {
+        UByte.MAX_VALUE to true
+    }
+
+fun UByteBigInt.Pred(): UByteBigInt {
+    val copyBytes = this.bytes.toMutableList()
+    for (i in copyBytes.indices) {
+        val (b, carry) = decWithCarry(copyBytes[i])
+        copyBytes[i] = b
+
+        if (!carry) {
+            break
+        }
+    }
+    return UByteBigInt(copyBytes)
+}
+
 sealed class UnaryRepr {
     data object Zero : UnaryRepr()
     data class Succ(val tail: UnaryRepr) : UnaryRepr()
@@ -50,16 +96,22 @@ val mutableListNatNumber = NatNumberEnvironment(
     }
 )
 
+val bigIntNatNumber = NatNumberEnvironment(
+    zero = { UByteBigInt(listOf(UByte.MIN_VALUE)) },
+    isZero = { it.bytes.all { x -> x == UByte.MIN_VALUE } },
+    succ = { it.Succ() },
+    pred = { it.Pred() }
+)
+
 fun ex2_1() {
     fun<T> testEnv(env: () -> NatNumberEnvironment<T>): () -> Unit = {
         with(env()) {
-            fun factorial(it: T): T {
-                return if (isZero(it) || isZero(pred(it))) {
+            fun factorial(it: T): T =
+                if (isZero(it) || isZero(pred(it))) {
                     it
                 } else {
                     multiply(it, factorial(pred(it)))
                 }
-            }
 
             val x = zero(); println("${toInt(x)} is zero: ${isZero(x)}")
             val y = succ(x); println("${toInt(y)} is zero: ${isZero(y)}")
@@ -81,10 +133,11 @@ fun ex2_1() {
         "unary repr" to testEnv { unaryNatNumber },
         "mutable list repr" to testEnv { mutableListNatNumber },
         "int repr" to testEnv { intNatNumber },
+        "big int repr" to testEnv { bigIntNatNumber },
     ).forEach {
-        val (label, test) = it
-        println(label)
-        test()
+        val (label, testEnv) = it
+        println("testing $label:")
+        testEnv()
         println()
     }
 }
