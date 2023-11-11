@@ -2,8 +2,10 @@ package exercises
 
 data class EnvScope<T, TKey, TVal> (
     val emptyEnv: () -> T,
+    val isEmpty: (T) -> Boolean,
     val extendEnv: (T, TKey, TVal) -> T,
     val extendEnvMany: (T, Array<Pair<TKey, TVal>>) -> T,
+    val hasBinding: (T, TKey) -> Boolean,
     val applyEnv: (T, TKey, (TVal) -> Unit) -> Unit
 )
 
@@ -29,17 +31,21 @@ fun <TKey, TValue> PairEnvExp<TKey, TValue>.apply(k: TKey, action: (TValue) -> U
     }
 }
 
+fun <TKey, TValue> PairEnvExp<TKey, TValue>.hasBinding(k: TKey): Boolean {
+    return when (this) {
+        is PairEnvExp.Empty -> false
+        is PairEnvExp.Extend -> { binding.first == k || rest.hasBinding(k) }
+    }
+}
+
 val pairEnvScope = EnvScope<PairEnvExp<String, Int>, String, Int>(
     emptyEnv = { PairEnvExp.Empty() },
+    isEmpty = { it is PairEnvExp.Empty },
     extendEnv = { env, k, v -> PairEnvExp.Extend( binding = k to v, rest = env ) },
     extendEnvMany = { env, pairs ->
-        var newEnv = env
-        for (pair in pairs.reversed()) {
-            val (k, v) = pair
-            newEnv = PairEnvExp.Extend( binding = k to v, rest = newEnv )
-        }
-        newEnv
+        pairs.reversed().fold(env) { e, binding -> PairEnvExp.Extend( binding, rest = e ) }
     },
+    hasBinding = { env, k -> env.hasBinding(k) },
     applyEnv = { env, k, action -> env.apply(k, action) }
 )
 
@@ -63,10 +69,20 @@ fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.apply(k: TKey, action: (TValue) -
     }
 }
 
+fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.hasBinding(k: TKey): Boolean =
+    when (this) {
+        is RibCageEnvExp.Empty -> false
+        is RibCageEnvExp.Extend -> {
+            bindings.firstOrNull { it.first == k } != null
+        }
+    }
+
 val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
     emptyEnv = { RibCageEnvExp.Empty() },
+    isEmpty = { it is RibCageEnvExp.Empty },
     extendEnv = { env, k, v -> RibCageEnvExp.Extend( bindings = arrayOf(k to v), rest = env ) },
     extendEnvMany = { env, pairs -> RibCageEnvExp.Extend( bindings = pairs, rest = env )},
+    hasBinding = { env, k -> env.hasBinding(k) },
     applyEnv = { env, k, action -> env.apply(k, action) }
 )
 
