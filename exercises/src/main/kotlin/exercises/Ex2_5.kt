@@ -86,6 +86,28 @@ val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
     applyEnv = { env, k, action -> env.apply(k, action) }
 )
 
+fun <TKey, TVal> makeEmptyEnv(): (TKey) -> () -> TVal =
+    { searchVar -> throw NoSuchElementException("the binding for the name $searchVar not found!") }
+fun <TKey, TVal> ((TKey) -> () -> TVal).extendEnv(savedVar: TKey, savedVal: () -> TVal): (TKey) -> () -> TVal =
+    { searchVar -> if (searchVar == savedVar) { savedVal } else { this(searchVar) } }
+
+val proceduralEnvScope = EnvScope<(String) -> () -> Int, String, Int>(
+    emptyEnv = { makeEmptyEnv() },
+    isEmpty = {
+        // todo: this is incorrect, figure out how to do it
+        false
+    },
+    extendEnv = { env, k, v -> env.extendEnv(k) { v } },
+    extendEnvMany = { env, pairs ->
+        pairs.reversed().fold(env) { e, binding -> e.extendEnv(binding.first) { binding.second }  }
+    },
+    hasBinding = { env, k ->
+        // todo: this is incorrect, figure out how to do it
+        false
+    },
+    applyEnv = { env, k, action -> action(env(k)()) }
+)
+
 fun ex2_5() {
     fun<T> testScope(scope: () -> EnvScope<T, String, Int>): () -> Unit = {
         with(scope()) {
@@ -105,7 +127,8 @@ fun ex2_5() {
 
     arrayOf(
         "pair repr" to testScope { pairEnvScope },
-        "rib cage repr" to testScope { ribCageEnvScope }
+        "rib cage repr" to testScope { ribCageEnvScope },
+        "procedural repr" to testScope { proceduralEnvScope }
     ).forEach {
         val (label, testScope) = it
         println("testing $label:")
