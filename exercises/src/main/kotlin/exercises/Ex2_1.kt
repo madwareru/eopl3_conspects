@@ -29,7 +29,7 @@ fun incWithCarry(b: UByte): Pair<UByte, Boolean> =
         UByte.MIN_VALUE to true
     }
 
-fun UByteBigInt.Succ(): UByteBigInt {
+fun UByteBigInt.succ(): UByteBigInt {
     val copyBytes = this.bytes.toMutableList()
     for (i in copyBytes.indices) {
         val (b, carry) = incWithCarry(copyBytes[i])
@@ -53,10 +53,10 @@ fun decWithCarry(b: UByte): Pair<UByte, Boolean>
         UByte.MAX_VALUE to true
     }
 
-fun UByteBigInt.IsZero(): Boolean = this.bytes.all { it == UByte.MIN_VALUE }
+fun UByteBigInt.isZero(): Boolean = this.bytes.all { it == UByte.MIN_VALUE }
 
-fun UByteBigInt.Pred(): UByteBigInt {
-    if (this.IsZero()) {
+fun UByteBigInt.pred(): UByteBigInt {
+    if (this.isZero()) {
         throw NoSuchElementException("called pred on zero!")
     }
 
@@ -106,9 +106,9 @@ val listNatNumber = NatNumberEnvironment(
 
 val bigIntNatNumber = NatNumberEnvironment(
     zero = { makeZeroBigNum() },
-    isZero = { it.IsZero() },
-    succ = { it.Succ() },
-    pred = { it.Pred() }
+    isZero = { it.isZero() },
+    succ = { it.succ() },
+    pred = { it.pred() }
 )
 
 fun ex2_1() {
