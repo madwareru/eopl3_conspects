@@ -20,6 +20,8 @@ data class NatNumberEnvironment<T>(
 
 data class UByteBigInt(val bytes: List<UByte>)
 
+fun makeZeroBigNum() = UByteBigInt(listOf(UByte.MIN_VALUE))
+
 fun incWithCarry(b: UByte): Pair<UByte, Boolean> =
     if (b < UByte.MAX_VALUE) {
         b.inc() to false
@@ -51,7 +53,13 @@ fun decWithCarry(b: UByte): Pair<UByte, Boolean>
         UByte.MAX_VALUE to true
     }
 
+fun UByteBigInt.IsZero(): Boolean = this.bytes.all { it == UByte.MIN_VALUE }
+
 fun UByteBigInt.Pred(): UByteBigInt {
+    if (this.IsZero()) {
+        throw NoSuchElementException("called pred on zero!")
+    }
+
     val copyBytes = this.bytes.toMutableList()
     for (i in copyBytes.indices) {
         val (b, carry) = decWithCarry(copyBytes[i])
@@ -83,8 +91,8 @@ val intNatNumber = NatNumberEnvironment(
     pred = { if (it > 0) { it - 1} else { throw NoSuchElementException("called pred on zero!") } }
 )
 
-val mutableListNatNumber = NatNumberEnvironment(
-    zero = { mutableListOf<Boolean>() },
+val listNatNumber = NatNumberEnvironment(
+    zero = { listOf<Boolean>() },
     isZero = { it.isEmpty() },
     succ = { val copy = it.toMutableList(); copy.add(true); copy },
     pred = {
@@ -97,8 +105,8 @@ val mutableListNatNumber = NatNumberEnvironment(
 )
 
 val bigIntNatNumber = NatNumberEnvironment(
-    zero = { UByteBigInt(listOf(UByte.MIN_VALUE)) },
-    isZero = { it.bytes.all { x -> x == UByte.MIN_VALUE } },
+    zero = { makeZeroBigNum() },
+    isZero = { it.IsZero() },
     succ = { it.Succ() },
     pred = { it.Pred() }
 )
@@ -131,7 +139,7 @@ fun ex2_1() {
 
     arrayOf(
         "unary repr" to testEnv { unaryNatNumber },
-        "mutable list repr" to testEnv { mutableListNatNumber },
+        "list repr" to testEnv { listNatNumber },
         "int repr" to testEnv { intNatNumber },
         "big int repr" to testEnv { bigIntNatNumber },
     ).forEach {
