@@ -7,22 +7,13 @@ data class NatNumberEnvironment<T>(
     val pred: (T) -> T
 ) {
     val toInt: (T) -> Int get() = { if (isZero(it)) { 0 } else { 1 + toInt(pred(it)) } }
-    val plus: (T, T) -> T get() = { x, y ->
-        if (isZero(y)) { x } else { plus(succ(x), pred(y)) }
-    }
-    val minus: (T, T) -> T get() = { x, y ->
-        if (isZero(y)) { x } else { minus(pred(x), pred(y)) }
-    }
+    val plus: (T, T) -> T get() = { x, y -> if (isZero(y)) { x } else { plus(succ(x), pred(y)) } }
+    val minus: (T, T) -> T get() = { x, y -> if (isZero(y)) { x } else { minus(pred(x), pred(y)) } }
     val multiply: (T, T) -> T get() = { x, y ->
         when {
             isZero(x) || isZero(y) -> zero()
-            else -> {
-                val predY = pred(y)
-                when {
-                    isZero(predY) -> x
-                    else -> plus(x, multiply(x, predY))
-                }
-            }
+            isZero(pred(y)) -> x
+            else -> plus(x, multiply(x, pred(y)))
         }
     }
 }
@@ -60,8 +51,8 @@ val mutableListNatNumber = NatNumberEnvironment(
 )
 
 fun ex2_1() {
-    fun<T> testEnv(env: NatNumberEnvironment<T>) {
-        with(env) {
+    fun<T> testEnv(env: () -> NatNumberEnvironment<T>): () -> Unit = {
+        with(env()) {
             fun factorial(it: T): T {
                 return if (isZero(it) || isZero(pred(it))) {
                     it
@@ -86,16 +77,14 @@ fun ex2_1() {
         }
     }
 
-    println("unary repr")
-    testEnv(unaryNatNumber)
-
-    println()
-
-    println("mutable list repr")
-    testEnv(mutableListNatNumber)
-
-    println()
-
-    println("int repr")
-    testEnv(intNatNumber)
+    arrayOf(
+        "unary repr" to testEnv { unaryNatNumber },
+        "mutable list repr" to testEnv { mutableListNatNumber },
+        "int repr" to testEnv { intNatNumber },
+    ).forEach {
+        val (label, test) = it
+        println(label)
+        test()
+        println()
+    }
 }
