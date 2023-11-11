@@ -1,6 +1,6 @@
 package exercises
 
-data class NatNumberEnvironment<T>(
+data class NatNumberScope<T>(
     val zero: () -> T,
     val isZero: (T) -> Boolean,
     val succ: (T) -> T,
@@ -77,21 +77,21 @@ sealed class UnaryRepr {
     data class Succ(val tail: UnaryRepr) : UnaryRepr()
 }
 
-val unaryNatNumber = NatNumberEnvironment<UnaryRepr>(
+val unaryNatNumber = NatNumberScope<UnaryRepr>(
     zero = { UnaryRepr.Zero },
     isZero = { it is UnaryRepr.Zero },
     succ = { UnaryRepr.Succ(it) },
     pred = { (it as? UnaryRepr.Succ)?.tail ?: throw NoSuchElementException("called pred on zero!") }
 )
 
-val intNatNumber = NatNumberEnvironment(
+val intNatNumber = NatNumberScope(
     zero = { 0 },
     isZero = { it == 0 },
     succ = { it + 1 },
     pred = { if (it > 0) { it - 1} else { throw NoSuchElementException("called pred on zero!") } }
 )
 
-val listNatNumber = NatNumberEnvironment(
+val listNatNumber = NatNumberScope(
     zero = { listOf<Boolean>() },
     isZero = { it.isEmpty() },
     succ = { val copy = it.toMutableList(); copy.add(true); copy },
@@ -104,7 +104,7 @@ val listNatNumber = NatNumberEnvironment(
     }
 )
 
-val bigIntNatNumber = NatNumberEnvironment(
+val bigIntNatNumber = NatNumberScope(
     zero = { makeZeroBigNum() },
     isZero = { it.isZero() },
     succ = { it.succ() },
@@ -112,8 +112,8 @@ val bigIntNatNumber = NatNumberEnvironment(
 )
 
 fun ex2_1() {
-    fun<T> testEnv(env: () -> NatNumberEnvironment<T>): () -> Unit = {
-        with(env()) {
+    fun<T> testScope(scope: () -> NatNumberScope<T>): () -> Unit = {
+        with(scope()) {
             fun factorial(it: T): T =
                 if (isZero(it) || isZero(pred(it))) {
                     it
@@ -138,14 +138,14 @@ fun ex2_1() {
     }
 
     arrayOf(
-        "unary repr" to testEnv { unaryNatNumber },
-        "list repr" to testEnv { listNatNumber },
-        "int repr" to testEnv { intNatNumber },
-        "big int repr" to testEnv { bigIntNatNumber },
+        "unary repr" to testScope { unaryNatNumber },
+        "list repr" to testScope { listNatNumber },
+        "int repr" to testScope { intNatNumber },
+        "big int repr" to testScope { bigIntNatNumber },
     ).forEach {
-        val (label, testEnv) = it
+        val (label, testScope) = it
         println("testing $label:")
-        testEnv()
+        testScope()
         println()
     }
 }
