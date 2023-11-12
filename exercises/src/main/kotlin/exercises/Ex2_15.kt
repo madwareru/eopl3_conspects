@@ -12,13 +12,27 @@ data class LcExpScope<TLcExp, TVar> (
     val asVarExpr: (TLcExp) -> TVar?,
     val asLambdaExpr: (TLcExp) -> LambdaExpr<TLcExp, TVar>?,
     val asAppExpr: (TLcExp) -> ApplicationExpr<TLcExp>?
-)
+) {
+    fun <TRes> match(
+        exp: TLcExp,
+        caseVar: (TVar) -> TRes,
+        caseLambda: (LambdaExpr<TLcExp, TVar>) -> TRes,
+        caseApplication: (ApplicationExpr<TLcExp>) -> TRes
+    ): TRes {
+        return asVarExpr(exp)?.let(caseVar)
+            ?: asLambdaExpr(exp)?.let(caseLambda)
+            ?: asAppExpr(exp)?.let(caseApplication)
+            ?: throw IllegalArgumentException("exp is neither var, lambda or app")
+    }
 
-fun <TLcExp, TVar> LcExpScope<TLcExp, TVar>.occursFree(searchVar: TVar, exp: TLcExp): Boolean =
-    asVarExpr(exp)?.let { it == searchVar }
-        ?: asLambdaExpr(exp)?.let { it.boundVar != searchVar && occursFree(searchVar, it.body) }
-        ?: asAppExpr(exp)?.let { occursFree(searchVar, it.rator) || occursFree(searchVar, it.rand) }
-        ?: throw IllegalArgumentException("exp is neither var, lambda or app")
+    fun occursFree(searchVar: TVar, exp: TLcExp): Boolean =
+        match(
+            exp,
+            caseVar = { it == searchVar },
+            caseLambda = { it.boundVar != searchVar && occursFree(searchVar, it.body)},
+            caseApplication = { occursFree(searchVar, it.rator) || occursFree(searchVar, it.rand) }
+        )
+}
 
 sealed class LcExpression {
     data class Var(val ident: String): LcExpression()
