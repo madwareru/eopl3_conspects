@@ -43,7 +43,9 @@ val pairEnvScope = EnvScope<PairEnvExp<String, Int>, String, Int>(
     isEmpty = { it is PairEnvExp.Empty },
     extendEnv = { env, k, v -> PairEnvExp.Extend( binding = k to v, rest = env ) },
     extendEnvMany = { env, pairs ->
-        pairs.reversed().fold(env) { e, binding -> PairEnvExp.Extend( binding, rest = e ) }
+        pairs
+            .reversed()
+            .fold(env) { e, binding -> PairEnvExp.Extend( binding, rest = e ) }
     },
     hasBinding = { env, k -> env.hasBinding(k) },
     applyEnv = { env, k, action -> env.apply(k, action) }
@@ -86,26 +88,25 @@ val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
     applyEnv = { env, k, action -> env.apply(k, action) }
 )
 
-fun <TKey, TVal> makeEmptyEnv(): (TKey) -> TVal =
-    { searchVar -> throw NoSuchElementException("the binding for the name $searchVar not found!") }
-fun <TKey, TVal> ((TKey) -> TVal).extendEnv(savedVar: TKey, savedVal: TVal): (TKey) -> TVal =
-    { searchVar -> if (searchVar == savedVar) { savedVal } else { this(searchVar) } }
+fun <TKey, TVal> makeEmptyEnv(): ((TKey) -> TVal?)? = null
+fun <TKey, TVal> ((TKey) -> TVal?)?.extendEnv(savedVar: TKey, savedVal: TVal): (TKey) -> TVal? =
+    { searchVar -> if (searchVar == savedVar) { savedVal } else { this?.let { this(searchVar) } } }
 
-val proceduralEnvScope = EnvScope<(String) -> Int, String, Int>(
+val proceduralEnvScope = EnvScope<((String) -> Int?)?, String, Int>(
     emptyEnv = { makeEmptyEnv() },
-    isEmpty = {
-        // todo: this is incorrect, figure out how to do it
-        false
-    },
+    isEmpty = { it == null },
     extendEnv = { env, k, v -> env.extendEnv(k, v) },
     extendEnvMany = { env, pairs ->
-        pairs.reversed().fold(env) { e, binding -> e.extendEnv(binding.first, binding.second)  }
+        pairs
+            .reversed()
+            .fold(env) { e, binding -> e.extendEnv(binding.first, binding.second)  }
     },
-    hasBinding = { env, k ->
-        // todo: this is incorrect, figure out how to do it
-        false
-    },
-    applyEnv = { env, k, action -> action(env(k)) }
+    hasBinding = { env, k -> env != null && env(k) != null },
+    applyEnv = { env, k, action ->
+        env?.let { it(k) }
+            ?.let(action)
+            ?: throw NoSuchElementException("the binding for the name $k not found!")
+    }
 )
 
 fun ex2_5() {
@@ -116,6 +117,10 @@ fun ex2_5() {
             applyEnv(env, "a") {v -> println("binding for a in env is $v") }
             applyEnv(env, "b") {v -> println("binding for b in env is $v") }
             applyEnv(env, "c") {v -> println("binding for c in env is $v") }
+            println("binding for a exists? ${hasBinding(env, "a")}")
+            println("binding for b exists? ${hasBinding(env, "b")}")
+            println("binding for c exists? ${hasBinding(env, "c")}")
+            println("binding for d exists? ${hasBinding(env, "d")}")
 
             val env2 = extendEnvMany(env, arrayOf( "b" to 100, "a" to 1000) )
 
