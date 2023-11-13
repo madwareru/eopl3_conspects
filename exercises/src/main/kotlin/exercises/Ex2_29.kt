@@ -134,7 +134,15 @@ sealed class SExpr {
 
                 when (token) {
                     Token.Whitespace -> { continue }
-                    is Token.Identifier -> { contents.add( Identifier(token.data) ) }
+                    is Token.Identifier -> {
+                        contents.add(
+                            if (token.data == "nil") {
+                                Nil
+                            } else {
+                                Identifier(token.data)
+                            }
+                        )
+                    }
                     Token.LParen -> {
                         groupStack.push(contents)
                         contents = mutableListOf()
