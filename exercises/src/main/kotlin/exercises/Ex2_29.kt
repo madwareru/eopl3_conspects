@@ -9,13 +9,12 @@ sealed class SExpr {
 
     sealed class List : SExpr() {
         data object Empty: List()
+
         data class Pair(val head: SExpr, val tail: SExpr) : List() {
-            fun <T> fold(init: T, step: (T, SExpr) -> T): T = if (tail !is Pair) {
-                step(init, head)
-            } else {
-                tail.fold(step(init, head), step)
+            fun <T> fold(init: T, step: (T, SExpr) -> T): T {
+                val v = step(init, head)
+                return if (tail !is Pair) { v } else { tail.fold(v, step) }
             }
-            fun forEach(step: (SExpr) -> Unit) = fold(Unit) { _, next -> step(next) }
         }
 
         companion object {
@@ -41,11 +40,13 @@ sealed class SExpr {
     }
 
     companion object {
+        @Suppress("unused")
         fun parse(source: kotlin.String): SExpr {
+            println(source)
             TODO()
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
-        fun apply(rator: SExpr, vararg rands: SExpr) = SExpr.List.Pair(
+        fun apply(rator: SExpr, vararg rands: SExpr) = List.Pair(
             rator,
             when {
                 rands.isEmpty() -> List.Empty
@@ -63,43 +64,40 @@ sealed class LExpr {
     data class Lambda(val boundVars: List<LExpr>, val body: LExpr) : LExpr()
     class ParseException(errorMessage: String) : Exception(errorMessage)
 
-    fun unparse(): SExpr {
-        return when (this) {
-            is Application -> SExpr.List.Pair(
-                rator.unparse(),
-                rands.fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unparse(), acc) }
+    fun unParse(): SExpr = when (this) {
+        is Application -> SExpr.List.Pair(
+            rator.unParse(),
+            rands.reversed().fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unParse(), acc) }
+        )
+        is Identifier -> SExpr.Identifier(data)
+        is Lambda -> {
+            SExpr.lambda(
+                if (boundVars.isEmpty()) {
+                    SExpr.List.Empty
+                } else {
+                    boundVars
+                        .reversed()
+                        .fold(SExpr.Nil as SExpr) { acc, next ->
+                            SExpr.List.Pair(next.unParse(), acc)
+                        } as SExpr.List
+                },
+                body.unParse()
             )
-            is Identifier -> SExpr.Identifier(this.data)
-            is Lambda -> {
-                SExpr.lambda(
-                    if (boundVars.isEmpty()) {
-                        SExpr.List.Empty
-                    } else {
-                        boundVars.fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unparse(), acc) } as SExpr.List
-                    },
-                    when (body) {
-                        is Application -> SExpr.List.Pair(
-                            body.rator.unparse(),
-                            body.rands.fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unparse(), acc) }
-                        )
-                        is Identifier -> body.unparse()
-                        is Lambda -> body.unparse()
-                    }
-                )
-            }
         }
     }
 
     companion object {
         private fun parseApplication(datum: SExpr.List.Pair): Application {
-            val rator = parse(datum.head)
-            val rands = mutableListOf<LExpr>()
             val randsList = datum.tail as? SExpr.List.Pair
                 ?: throw ParseException("rands should be pair!")
-            randsList.forEach { rands.add(parse(it)) }
-            rands.reverse()
 
-            return Application(rator, rands)
+            return Application(
+                parse(datum.head),
+                randsList.fold(mutableListOf()) { acc, next ->
+                    acc.add(parse(next))
+                    acc
+                }
+            )
         }
 
         private fun parseLambda(datum: SExpr): Lambda {
@@ -109,24 +107,22 @@ sealed class LExpr {
             val boundVarList = bVars as? SExpr.List.Pair
                 ?: throw ParseException("bound vars should be Pair!")
 
-            val boundVars = mutableListOf<LExpr>()
-            boundVarList.forEach {
-                val boundVarIdent = it as? SExpr.Identifier
-                    ?: throw ParseException("expected identifier!")
-                boundVars.add(parseIdentifier(boundVarIdent))
-            }
-            boundVars.reverse()
-
             val bodyList = rest as? SExpr.List.Pair
                 ?: throw ParseException("expected pair, found empty list!")
-
-            val body = parse(bodyList.head)
 
             if (bodyList.tail !is SExpr.Nil) {
                 throw ParseException("found garbage in tail of lambda expr")
             }
 
-            return Lambda(boundVars, body)
+            return Lambda(
+                boundVarList.fold(mutableListOf()) { acc, next ->
+                    val boundVarIdent = next as? SExpr.Identifier
+                        ?: throw ParseException("expected identifier!")
+                    acc.add(parseIdentifier(boundVarIdent))
+                    acc
+                },
+                parse(bodyList.head)
+            )
         }
 
         private fun parseIdentifier(datum: SExpr.Identifier): Identifier {
@@ -159,13 +155,13 @@ fun ex2_29() {
         println(sExpr.toPrintableString())
         val lExpr = LExpr.parse(sExpr)
         println(lExpr)
-        val sExprUnParsed = lExpr.unparse()
+        val sExprUnParsed = lExpr.unParse()
         println(sExprUnParsed)
         println(sExprUnParsed.toPrintableString())
         println()
     }
 
-    val testSexpr = SExpr.lambda(
+    val testSExpr = SExpr.lambda(
         SExpr.List.of(
             SExpr.Identifier("a"),
             SExpr.Identifier("b"),
@@ -178,7 +174,7 @@ fun ex2_29() {
             SExpr.Identifier("c")
         )
     )
-    testSExpr(testSexpr)
+    testSExpr(testSExpr)
 
     val smallSExpr = SExpr.apply(
         SExpr.lambda(
