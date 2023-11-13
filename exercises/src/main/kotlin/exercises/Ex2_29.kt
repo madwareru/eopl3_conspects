@@ -1,6 +1,6 @@
 package exercises
 
-import java.util.*
+import java.util.Stack
 
 sealed class SExpr {
     data object Nil : SExpr()
