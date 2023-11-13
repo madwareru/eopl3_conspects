@@ -27,7 +27,9 @@ sealed class SExpr {
         data object Whitespace: Token()
         data object LParen: Token()
         data object RParen: Token()
-        data class Identifier(val data: String): Token()
+        data class Identifier(val data: String): Token() {
+            fun toSExpr(): SExpr = if (data == "nil") { Nil } else { SExpr.Identifier(data) }
+        }
     }
     class ScanException(errorMessage: String) : Exception(errorMessage)
     class ParseException(errorMessage: String) : Exception(errorMessage)
@@ -46,68 +48,60 @@ sealed class SExpr {
             fun CharIterator.tryNext(): Char? = if (!hasNext()) { null } else { nextChar() }
 
             val charIterator = source.iterator()
-            var eatenChar: Char? = null
+            var eaten: Char? = null
             val stream = mutableListOf<Token>()
             var complete = false
 
             while (!complete) {
-                val next = if (eatenChar != null) {
-                    val c = eatenChar
-                    eatenChar = null
+                val next = if (eaten != null) {
+                    val c = eaten
+                    eaten = null
                     c
                 } else {
                     charIterator.tryNext()
-                }
+                } ?: break
 
-                if (next == null) { break }
-
-                val simpleToken = when (next) {
-                    '(' -> Token.LParen
-                    ')' -> Token.RParen
-                    else -> null
-                }
-
-                if (simpleToken != null) {
-                    stream.add(simpleToken)
-                } else if (next.isWhitespace()) {
-                    while (true) {
-                        when(val c = charIterator.tryNext()) {
-                            null -> {
-                                stream.add(Token.Whitespace)
-                                complete = true
-                                break
-                            }
-                            else -> {
-                                if (!c.isWhitespace()) {
-                                    eatenChar = c
+                when {
+                    next == '(' -> stream.add(Token.LParen)
+                    next == ')' -> stream.add(Token.RParen)
+                    next.isWhitespace() -> {
+                        while (true) {
+                            when(val c = charIterator.tryNext()) {
+                                null -> {
                                     stream.add(Token.Whitespace)
+                                    complete = true
                                     break
+                                }
+                                else -> {
+                                    if (!c.isWhitespace()) {
+                                        eaten = c
+                                        stream.add(Token.Whitespace)
+                                        break
+                                    }
                                 }
                             }
                         }
                     }
-                } else if (next.isLetter()) {
-                    var tokenData = String(charArrayOf(next))
-                    while (true) {
-                        when(val c = charIterator.tryNext()) {
-                            null -> {
-                                stream.add(Token.Identifier(tokenData))
-                                complete = true
-                                break
-                            }
-                            else -> {
-                                if (!c.isLetter()) {
-                                    eatenChar = c
+                    next.isLetter() || next == ':' || next == '_' -> {
+                        var tokenData = String(charArrayOf(next))
+                        while (true) {
+                            val c = charIterator.tryNext()
+                            when {
+                                c == null -> {
+                                    stream.add(Token.Identifier(tokenData))
+                                    complete = true
+                                    break
+                                }
+                                !c.isLetter() && !c.isDigit() && !arrayOf('-', '_', '!', '?', ':').contains(c) -> {
+                                    eaten = c
                                     stream.add(Token.Identifier(tokenData))
                                     break
-                                } else {
-                                    tokenData += c
                                 }
+                                else -> tokenData += c
                             }
                         }
                     }
-                } else {
-                    throw ScanException("found a bad character")
+                    else -> throw ScanException("found a bad character")
                 }
             }
             return stream
@@ -122,29 +116,21 @@ sealed class SExpr {
             var result: SExpr? = null
 
             for (token in tokens) {
-                if (result != null) {
-                    throw ParseException("Found tokens after a closing paren")
-                }
+                if (token == Token.Whitespace) { continue }
+
+                if (result != null) { throw ParseException("Found tokens after a closing paren") }
 
                 if (justStarted) {
-                    if (token != Token.LParen) {
-                        throw ParseException("S-expr is expected to be opened by '('")
+                    when (token) {
+                        is Token.Identifier -> result = token.toSExpr()
+                        Token.LParen -> {}
+                        else -> throw ParseException("S-expr is expected to be a single identifier or be opened by '('")
                     }
                     justStarted = false
                     continue
                 }
 
                 when (token) {
-                    Token.Whitespace -> { continue }
-                    is Token.Identifier -> {
-                        contents.add(
-                            if (token.data == "nil") {
-                                Nil
-                            } else {
-                                Identifier(token.data)
-                            }
-                        )
-                    }
                     Token.LParen -> {
                         groupStack.push(contents)
                         contents = mutableListOf()
@@ -163,14 +149,12 @@ sealed class SExpr {
                             contents.add(resultContent)
                         }
                     }
+                    is Token.Identifier -> contents.add(token.toSExpr())
+                    else -> {}
                 }
             }
 
-            if (result == null) {
-                throw ParseException("S-expr is expected to be opened by ')'")
-            }
-
-            return result
+            return result ?: throw ParseException("S-expr is expected to be opened by ')'")
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
         fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
@@ -226,9 +210,7 @@ sealed class LExpr {
         }
 
         private fun parseIdentifier(datum: SExpr.Identifier): Identifier {
-            if (datum.data == "lambda") {
-                throw ParseException("found \"lambda\" identifier in incorrect place!")
-            }
+            if (datum.data == "lambda") { throw ParseException("found \"lambda\" identifier in incorrect place!") }
             return Identifier(datum.data)
         }
 
