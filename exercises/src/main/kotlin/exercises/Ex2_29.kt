@@ -242,6 +242,7 @@ fun ex2_29() {
     }
 
     val sources = arrayOf(
+        "( lambda ( a-one b:two c? ) ( add! a-one b:two c? ) )",
         "( lambda ( a b c ) ( add a b c ) )",
         "( ( lambda ( a ) ( a b ) ) c )",
         "( lambda ( x ) ( lambda ( y ) ( ( lambda ( x ) ( x y ) ) x ) ) )"
