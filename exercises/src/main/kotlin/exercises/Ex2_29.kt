@@ -1,12 +1,10 @@
 package exercises
 
+import java.util.*
+
 sealed class SExpr {
     data object Nil : SExpr()
-    data class Number(val data: Double) : SExpr()
-    data class Char(val data: kotlin.Char) : SExpr()
-    data class String(val data: kotlin.String) : SExpr()
-    data class Identifier(val data: kotlin.String) : SExpr()
-
+    data class Identifier(val data: String) : SExpr()
     sealed class List : SExpr() {
         data object Empty: List()
 
@@ -20,30 +18,149 @@ sealed class SExpr {
         companion object {
             fun of(vararg entries: SExpr): List = when {
                 entries.isEmpty() -> Empty
-                else -> entries.indices
-                    .reversed()
-                    .fold(Nil as SExpr) { acc, i -> Pair(entries[i], acc) } as List
+                else -> entries.indices.reversed().fold(Nil as SExpr) { a, i -> Pair(entries[i], a) } as List
             }
         }
     }
 
-    fun toPrintableString(): kotlin.String {
+    private sealed class Token {
+        data object Whitespace: Token()
+        data object LParen: Token()
+        data object RParen: Token()
+        data class Identifier(val data: String): Token()
+    }
+
+    fun toPrintableString(): String {
         return when (this) {
-            is Char -> "'$data'"
             is Identifier -> data
             List.Empty -> "( )"
-            is List.Pair -> "( ${fold("") { acc, next -> acc + next.toPrintableString() + " " }})"
+            is List.Pair -> "( ${fold("") { a, n -> a + n.toPrintableString() + " " }})"
             Nil -> "nil"
-            is Number -> "$data"
-            is String -> "\"$data\""
         }
     }
 
     companion object {
-        @Suppress("unused")
-        fun parse(source: kotlin.String): SExpr {
-            println(source)
-            TODO()
+        private fun scan(source: String): kotlin.collections.List<Token> {
+            fun CharIterator.tryNext(): Char? = if (!hasNext()) { null } else { nextChar() }
+
+            val charIterator = source.iterator()
+            var eatenChar: Char? = null
+            val stream = mutableListOf<Token>()
+            var complete = false
+
+            while (!complete) {
+                val next = if (eatenChar != null) {
+                    val c = eatenChar
+                    eatenChar = null
+                    c
+                } else {
+                    charIterator.tryNext()
+                }
+
+                if (next == null) { break }
+
+                val simpleToken = when (next) {
+                    '(' -> Token.LParen
+                    ')' -> Token.RParen
+                    else -> null
+                }
+
+                if (simpleToken != null) {
+                    stream.add(simpleToken)
+                } else if (next.isWhitespace()) {
+                    while (true) {
+                        when(val c = charIterator.tryNext()) {
+                            null -> {
+                                stream.add(Token.Whitespace)
+                                complete = true
+                                break
+                            }
+                            else -> {
+                                if (!c.isWhitespace()) {
+                                    eatenChar = c
+                                    stream.add(Token.Whitespace)
+                                    break
+                                }
+                            }
+                        }
+                    }
+                } else if (next.isLetter()) {
+                    var tokenData = String(charArrayOf(next))
+                    while (true) {
+                        when(val c = charIterator.tryNext()) {
+                            null -> {
+                                stream.add(Token.Identifier(tokenData))
+                                complete = true
+                                break
+                            }
+                            else -> {
+                                if (!c.isLetter()) {
+                                    eatenChar = c
+                                    stream.add(Token.Identifier(tokenData))
+                                    break
+                                } else {
+                                    tokenData += c
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    throw Exception("found a bad character")
+                }
+            }
+            return stream
+        }
+
+        fun parse(source: String): SExpr {
+            val tokens = scan(source)
+            var contents = mutableListOf<SExpr>()
+            val groupStack: Stack<MutableList<SExpr>> = Stack()
+            var justStarted = true
+
+            var result: SExpr? = null
+
+            for (token in tokens) {
+                if (result != null) {
+                    throw Exception("Found tokens after a closing paren")
+                }
+
+                if (justStarted) {
+                    if (token != Token.LParen) {
+                        throw Exception("S-expr is expected to be opened by '('")
+                    }
+                    justStarted = false
+                    continue
+                }
+
+                when (token) {
+                    Token.Whitespace -> { continue }
+                    is Token.Identifier -> { contents.add( Identifier(token.data) ) }
+                    Token.LParen -> {
+                        groupStack.push(contents)
+                        contents = mutableListOf()
+                    }
+                    Token.RParen -> {
+                        val resultContent = if (contents.isEmpty()) {
+                            List.Empty
+                        } else {
+                            contents.reversed().fold(Nil as SExpr) { a, n -> List.Pair(n, a) }
+                        }
+
+                        if (groupStack.isEmpty()) {
+                            result = resultContent
+                        } else {
+                            contents = groupStack.pop()
+                            contents.add(resultContent)
+                        }
+                    }
+                }
+            }
+
+            if (result == null) {
+                throw Exception("S-expr is expected to be opened by ')'")
+            }
+
+            return result
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
         fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
@@ -59,7 +176,7 @@ sealed class LExpr {
     fun unParse(): SExpr {
         fun List<LExpr>.toSExpr() : SExpr.List = when {
             this.isEmpty() -> SExpr.List.Empty
-            else -> reversed().fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unParse(), acc) } as SExpr.List
+            else -> reversed().fold(SExpr.Nil as SExpr) { a, n -> SExpr.List.Pair(n.unParse(), a) } as SExpr.List
         }
 
         return when (this) {
@@ -71,38 +188,28 @@ sealed class LExpr {
 
     companion object {
         private fun parseApplication(datum: SExpr.List.Pair): Application {
-            val randsList = datum.tail as? SExpr.List.Pair
-                ?: throw ParseException("rands should be pair!")
+            val randsList = datum.tail as? SExpr.List.Pair ?: throw ParseException("rands should be pair!")
 
             return Application(
                 parse(datum.head),
-                randsList.fold(mutableListOf()) { acc, next ->
-                    acc.add(parse(next))
-                    acc
-                }
+                randsList.fold(mutableListOf()) { a, n -> a.add(parse(n)); a }
             )
         }
 
         private fun parseLambda(datum: SExpr): Lambda {
-            val (bVars, rest) = datum as? SExpr.List.Pair
-                ?: throw ParseException("expected pair, found empty list!")
+            val (bVars, rest) = datum as? SExpr.List.Pair ?: throw ParseException("expected pair, found empty list!")
 
-            val boundVarList = bVars as? SExpr.List.Pair
-                ?: throw ParseException("bound vars should be Pair!")
+            val boundVarList = bVars as? SExpr.List.Pair ?: throw ParseException("bound vars should be Pair!")
 
-            val bodyList = rest as? SExpr.List.Pair
-                ?: throw ParseException("expected pair, found empty list!")
+            val bodyList = rest as? SExpr.List.Pair ?: throw ParseException("expected pair, found empty list!")
 
-            if (bodyList.tail !is SExpr.Nil) {
-                throw ParseException("found garbage in tail of lambda expr")
-            }
+            if (bodyList.tail !is SExpr.Nil) { throw ParseException("found garbage in tail of lambda expr") }
 
             return Lambda(
-                boundVarList.fold(mutableListOf()) { acc, next ->
-                    val boundVarIdent = next as? SExpr.Identifier
-                        ?: throw ParseException("expected identifier!")
-                    acc.add(parseIdentifier(boundVarIdent))
-                    acc
+                boundVarList.fold(mutableListOf()) { a, n ->
+                    val boundVarIdent = n as? SExpr.Identifier ?: throw ParseException("expected identifier!")
+                    a.add(parseIdentifier(boundVarIdent))
+                    a
                 },
                 parse(bodyList.head)
             )
@@ -123,17 +230,15 @@ sealed class LExpr {
         fun parse(datum: SExpr): LExpr = when(datum) {
             is SExpr.Identifier -> parseIdentifier(datum)
             is SExpr.List.Pair -> parseApplicationOrLambda(datum)
-            is SExpr.Char -> throw ParseException("expected pair of ident, but found char!")
             SExpr.List.Empty -> throw ParseException("expected pair of ident, but found empty list!")
             SExpr.Nil -> throw ParseException("expected pair of ident, but found nil!")
-            is SExpr.Number -> throw ParseException("expected pair of ident, but found number!")
-            is SExpr.String -> throw ParseException("expected pair of ident, but found string!")
         }
     }
 }
 
 fun ex2_29() {
-    fun testSExpr(sExpr: SExpr) {
+    fun testSExpr(source: String) {
+        val sExpr = SExpr.parse(source)
         println(sExpr)
         println(sExpr.toPrintableString())
         val lExpr = LExpr.parse(sExpr)
@@ -144,50 +249,13 @@ fun ex2_29() {
         println()
     }
 
-    val testSExpr = SExpr.lambda(
-        SExpr.List.of(
-            SExpr.Identifier("a"),
-            SExpr.Identifier("b"),
-            SExpr.Identifier("c")
-        ),
-        SExpr.apply(
-            SExpr.Identifier("add"),
-            SExpr.List.of(
-                SExpr.Identifier("a"),
-                SExpr.Identifier("b"),
-                SExpr.Identifier("c")
-            )
-        )
+    val sources = arrayOf(
+        "( lambda ( a b c ) ( add a b c ) )",
+        "( ( lambda ( a ) ( a b ) ) c )",
+        "( lambda ( x ) ( lambda ( y ) ( ( lambda ( x ) ( x y ) ) x ) ) )"
     )
-    testSExpr(testSExpr)
 
-    val smallSExpr = SExpr.apply(
-        SExpr.lambda(
-            SExpr.List.of(SExpr.Identifier("a")),
-            SExpr.apply(
-                SExpr.Identifier("a"),
-                SExpr.List.of(SExpr.Identifier("b"))
-            )
-        ),
-        SExpr.List.of(SExpr.Identifier("c"))
-    )
-    testSExpr(smallSExpr)
-
-    val sExpr = SExpr.lambda(
-        SExpr.List.of(SExpr.Identifier("x")),
-        SExpr.lambda(
-            SExpr.List.of(SExpr.Identifier("y")),
-            SExpr.apply(
-                SExpr.lambda(
-                    SExpr.List.of(SExpr.Identifier("x")),
-                    SExpr.apply(
-                        SExpr.Identifier("x"),
-                        SExpr.List.of(SExpr.Identifier("y"))
-                    )
-                ),
-                SExpr.List.of(SExpr.Identifier("x"))
-            )
-        )
-    )
-    testSExpr(sExpr)
+    for (source in sources) {
+        testSExpr(source)
+    }
 }
