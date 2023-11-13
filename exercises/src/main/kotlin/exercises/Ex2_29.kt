@@ -29,6 +29,8 @@ sealed class SExpr {
         data object RParen: Token()
         data class Identifier(val data: String): Token()
     }
+    class ScanException(errorMessage: String) : Exception(errorMessage)
+    class ParseException(errorMessage: String) : Exception(errorMessage)
 
     fun toPrintableString(): String {
         return when (this) {
@@ -105,7 +107,7 @@ sealed class SExpr {
                         }
                     }
                 } else {
-                    throw Exception("found a bad character")
+                    throw ScanException("found a bad character")
                 }
             }
             return stream
@@ -121,12 +123,12 @@ sealed class SExpr {
 
             for (token in tokens) {
                 if (result != null) {
-                    throw Exception("Found tokens after a closing paren")
+                    throw ParseException("Found tokens after a closing paren")
                 }
 
                 if (justStarted) {
                     if (token != Token.LParen) {
-                        throw Exception("S-expr is expected to be opened by '('")
+                        throw ParseException("S-expr is expected to be opened by '('")
                     }
                     justStarted = false
                     continue
@@ -165,7 +167,7 @@ sealed class SExpr {
             }
 
             if (result == null) {
-                throw Exception("S-expr is expected to be opened by ')'")
+                throw ParseException("S-expr is expected to be opened by ')'")
             }
 
             return result
