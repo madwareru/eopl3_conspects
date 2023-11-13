@@ -29,13 +29,13 @@ sealed class SExpr {
 
     fun toPrintableString(): kotlin.String {
         return when (this) {
-            is Char -> "'${this.data}'"
-            is Identifier -> this.data
+            is Char -> "'$data'"
+            is Identifier -> data
             List.Empty -> "( )"
-            is List.Pair -> "( ${this.fold("") { acc, next -> acc + next.toPrintableString() + " " }})"
+            is List.Pair -> "( ${fold("") { acc, next -> acc + next.toPrintableString() + " " }})"
             Nil -> "nil"
-            is Number -> "${this.data}"
-            is String -> "\"${this.data}\""
+            is Number -> "$data"
+            is String -> "\"$data\""
         }
     }
 
@@ -46,15 +46,7 @@ sealed class SExpr {
             TODO()
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
-        fun apply(rator: SExpr, vararg rands: SExpr) = List.Pair(
-            rator,
-            when {
-                rands.isEmpty() -> List.Empty
-                else -> rands.indices
-                    .reversed()
-                    .fold(Nil as SExpr) { acc, i -> List.Pair(rands[i], acc) }
-            }
-        )
+        fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
     }
 }
 
@@ -64,25 +56,16 @@ sealed class LExpr {
     data class Lambda(val boundVars: List<LExpr>, val body: LExpr) : LExpr()
     class ParseException(errorMessage: String) : Exception(errorMessage)
 
-    fun unParse(): SExpr = when (this) {
-        is Application -> SExpr.List.Pair(
-            rator.unParse(),
-            rands.reversed().fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unParse(), acc) }
-        )
-        is Identifier -> SExpr.Identifier(data)
-        is Lambda -> {
-            SExpr.lambda(
-                if (boundVars.isEmpty()) {
-                    SExpr.List.Empty
-                } else {
-                    boundVars
-                        .reversed()
-                        .fold(SExpr.Nil as SExpr) { acc, next ->
-                            SExpr.List.Pair(next.unParse(), acc)
-                        } as SExpr.List
-                },
-                body.unParse()
-            )
+    fun unParse(): SExpr {
+        fun List<LExpr>.toSExpr() : SExpr.List = when {
+            this.isEmpty() -> SExpr.List.Empty
+            else -> reversed().fold(SExpr.Nil as SExpr) { acc, next -> SExpr.List.Pair(next.unParse(), acc) } as SExpr.List
+        }
+
+        return when (this) {
+            is Application -> SExpr.apply(rator.unParse(), rands.toSExpr())
+            is Identifier -> SExpr.Identifier(data)
+            is Lambda -> SExpr.lambda(boundVars.toSExpr(), body.unParse())
         }
     }
 
@@ -169,9 +152,11 @@ fun ex2_29() {
         ),
         SExpr.apply(
             SExpr.Identifier("add"),
-            SExpr.Identifier("a"),
-            SExpr.Identifier("b"),
-            SExpr.Identifier("c")
+            SExpr.List.of(
+                SExpr.Identifier("a"),
+                SExpr.Identifier("b"),
+                SExpr.Identifier("c")
+            )
         )
     )
     testSExpr(testSExpr)
@@ -179,9 +164,12 @@ fun ex2_29() {
     val smallSExpr = SExpr.apply(
         SExpr.lambda(
             SExpr.List.of(SExpr.Identifier("a")),
-            SExpr.apply(SExpr.Identifier("a"), SExpr.Identifier("b"))
+            SExpr.apply(
+                SExpr.Identifier("a"),
+                SExpr.List.of(SExpr.Identifier("b"))
+            )
         ),
-        SExpr.Identifier("c")
+        SExpr.List.of(SExpr.Identifier("c"))
     )
     testSExpr(smallSExpr)
 
@@ -192,9 +180,12 @@ fun ex2_29() {
             SExpr.apply(
                 SExpr.lambda(
                     SExpr.List.of(SExpr.Identifier("x")),
-                    SExpr.apply(SExpr.Identifier("x"), SExpr.Identifier("y"))
+                    SExpr.apply(
+                        SExpr.Identifier("x"),
+                        SExpr.List.of(SExpr.Identifier("y"))
+                    )
                 ),
-                SExpr.Identifier("x")
+                SExpr.List.of(SExpr.Identifier("x"))
             )
         )
     )
