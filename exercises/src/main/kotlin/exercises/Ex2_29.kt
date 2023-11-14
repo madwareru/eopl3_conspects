@@ -3,11 +3,9 @@ package exercises
 import java.util.Stack
 
 sealed class SExpr {
-    data object Nil : SExpr()
     data class Identifier(val data: String) : SExpr()
     sealed class List : SExpr() {
         data object Empty: List()
-
         data class Pair(val head: SExpr, val tail: SExpr) : List() {
             fun <T> fold(init: T, step: (T, SExpr) -> T): T {
                 val v = step(init, head)
@@ -21,7 +19,7 @@ sealed class SExpr {
         companion object {
             fun of(vararg entries: SExpr): List = when {
                 entries.isEmpty() -> Empty
-                else -> entries.indices.reversed().fold(Nil as SExpr) { a, i -> Pair(entries[i], a) } as List
+                else -> entries.indices.reversed().fold(Empty as List) { a, i -> Pair(entries[i], a) }
             }
         }
     }
@@ -30,9 +28,7 @@ sealed class SExpr {
         data object Whitespace: Token()
         data object LParen: Token()
         data object RParen: Token()
-        data class Identifier(val data: String): Token() {
-            fun toSExpr(): SExpr = if (data == "nil") { Nil } else { SExpr.Identifier(data) }
-        }
+        data class Identifier(val data: String): Token()
     }
     class ScanException(errorMessage: String) : Exception(errorMessage)
     class ParseException(errorMessage: String) : Exception(errorMessage)
@@ -42,7 +38,6 @@ sealed class SExpr {
             is Identifier -> data
             List.Empty -> "( )"
             is List.Pair -> "( ${fold("") { a, n -> a + n.toPrintableString() + " " }})"
-            Nil -> "nil"
         }
     }
 
@@ -122,7 +117,7 @@ sealed class SExpr {
 
                 if (justStarted) {
                     when (token) {
-                        is Token.Identifier -> result = token.toSExpr()
+                        is Token.Identifier -> result = Identifier(token.data)
                         Token.LParen -> {}
                         else -> parse_error("s-expr is expected to be a single identifier or be opened by '('")
                     }
@@ -137,7 +132,7 @@ sealed class SExpr {
                             contents.isNotEmpty() -> contents
                                 .indices
                                 .reversed()
-                                .fold(Nil as SExpr) { a, i -> List.Pair(contents[i], a) }
+                                .fold(List.Empty as List) { a, i -> List.Pair(contents[i], a) }
                             else -> List.Empty
                         }
 
@@ -148,7 +143,7 @@ sealed class SExpr {
                             result = resultContent
                         }
                     }
-                    is Token.Identifier -> contents.add(token.toSExpr())
+                    is Token.Identifier -> contents.add(Identifier(token.data))
                     else -> {}
                 }
             }
@@ -170,7 +165,7 @@ sealed class LExpr {
         fun List<LExpr>.toSExpr() : SExpr.List = when {
             this.isNotEmpty() -> indices
                 .reversed()
-                .fold(SExpr.Nil as SExpr) { a, i -> SExpr.List.Pair(this[i].unParse(), a) } as SExpr.List
+                .fold(SExpr.List.Empty as SExpr.List) { a, i -> SExpr.List.Pair(this[i].unParse(), a) }
             else -> SExpr.List.Empty
         }
 
@@ -193,7 +188,7 @@ sealed class LExpr {
             val (l, r) = datum as? SExpr.List.Pair ?: parse_error("expected pair, found $datum")
             val bounds = l as? SExpr.List.Pair ?: parse_error("expected pair, found $l")
             val bodyList = r as? SExpr.List.Pair ?: parse_error("expected pair, found $r")
-            if (bodyList.tail !is SExpr.Nil) { parse_error("found garbage in tail of lambda expr") }
+            if (bodyList.tail !is SExpr.List.Empty) { parse_error("found garbage in tail of lambda expr") }
             return Lambda(
                 bounds.toList {
                     (it as? SExpr.Identifier)
@@ -218,7 +213,6 @@ sealed class LExpr {
             is SExpr.Identifier -> parseIdent(datum)
             is SExpr.List.Pair -> parseApplicationOrLambda(datum)
             SExpr.List.Empty -> parse_error("expected pair or ident, found empty list")
-            SExpr.Nil -> parse_error("expected pair or ident, found nil")
         }
     }
 }
