@@ -47,6 +47,8 @@ sealed class SExpr {
     }
 
     companion object {
+        private fun scan_error(errorMessage: String): Nothing = throw ScanException(errorMessage)
+
         private fun scan(source: String): kotlin.collections.List<Token> {
             fun CharIterator.tryNext(): Char? = if (!hasNext()) { null } else { nextChar() }
 
@@ -102,11 +104,14 @@ sealed class SExpr {
                             }
                         }
                     }
-                    else -> throw ScanException("found a bad character")
+                    else -> scan_error("found a bad character")
                 }
             }
+
             return stream
         }
+
+        private fun parse_error(errorMessage: String): Nothing = throw ParseException(errorMessage)
 
         fun parse(source: String): SExpr {
             val tokens = scan(source)
@@ -119,13 +124,13 @@ sealed class SExpr {
             for (token in tokens) {
                 if (token == Token.Whitespace) { continue }
 
-                if (result != null) { throw ParseException("Found tokens after a closing paren") }
+                if (result != null) { parse_error("Found tokens after a closing paren") }
 
                 if (justStarted) {
                     when (token) {
                         is Token.Identifier -> result = token.toSExpr()
                         Token.LParen -> {}
-                        else -> throw ParseException("S-expr is expected to be a single identifier or be opened by '('")
+                        else -> parse_error("S-expr is expected to be a single identifier or be opened by '('")
                     }
                     justStarted = false
                     continue
@@ -154,7 +159,7 @@ sealed class SExpr {
                 }
             }
 
-            return result ?: throw ParseException("S-expr is expected to be opened by ')'")
+            return result ?: parse_error("S-expr is expected to be opened by ')'")
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
         fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
@@ -183,32 +188,35 @@ sealed class LExpr {
     }
 
     companion object {
+        private fun parse_error(errorMessage: String): Nothing = throw ParseException(errorMessage)
+
         private fun parseApplication(datum: SExpr.List.Pair): Application {
-            val randsList = datum.tail as? SExpr.List.Pair ?: throw ParseException("rands should be pair!")
+            val randsList = datum.tail as? SExpr.List.Pair ?: parse_error("rands should be pair!")
 
             return Application(parse(datum.head), randsList.toList { parse(it) })
         }
 
         private fun parseLambda(datum: SExpr): Lambda {
-            val (bVars, rest) = datum as? SExpr.List.Pair ?: throw ParseException("expected pair, found empty list!")
+            val (l, r) = datum as? SExpr.List.Pair ?: parse_error("expected pair, found $datum")
 
-            val boundVarList = bVars as? SExpr.List.Pair ?: throw ParseException("bound vars should be Pair!")
+            val bounds = l as? SExpr.List.Pair ?: parse_error("expected pair, found $l")
 
-            val bodyList = rest as? SExpr.List.Pair ?: throw ParseException("expected pair, found empty list!")
+            val bodyList = r as? SExpr.List.Pair ?: parse_error("expected pair, found $r")
 
-            if (bodyList.tail !is SExpr.Nil) { throw ParseException("found garbage in tail of lambda expr") }
+            if (bodyList.tail !is SExpr.Nil) { parse_error("found garbage in tail of lambda expr") }
 
             return Lambda(
-                boundVarList.toList {
-                    val boundVarIdent = it as? SExpr.Identifier ?: throw ParseException("expected identifier!")
-                    parseIdentifier(boundVarIdent)
+                bounds.toList {
+                    (it as? SExpr.Identifier)
+                        ?.let(::parseIdent)
+                        ?: parse_error("expected identifier, found $it")
                 },
                 parse(bodyList.head)
             )
         }
 
-        private fun parseIdentifier(datum: SExpr.Identifier): Identifier {
-            if (datum.data == "lambda") { throw ParseException("found \"lambda\" identifier in incorrect place!") }
+        private fun parseIdent(datum: SExpr.Identifier): Identifier {
+            if (datum.data == "lambda") { parse_error("found \"lambda\" identifier in incorrect place!") }
             return Identifier(datum.data)
         }
 
@@ -218,10 +226,10 @@ sealed class LExpr {
         }
 
         fun parse(datum: SExpr): LExpr = when(datum) {
-            is SExpr.Identifier -> parseIdentifier(datum)
+            is SExpr.Identifier -> parseIdent(datum)
             is SExpr.List.Pair -> parseApplicationOrLambda(datum)
-            SExpr.List.Empty -> throw ParseException("expected pair of ident, but found empty list!")
-            SExpr.Nil -> throw ParseException("expected pair of ident, but found nil!")
+            SExpr.List.Empty -> parse_error("expected pair or ident, found empty list")
+            SExpr.Nil -> parse_error("expected pair or ident, found nil")
         }
     }
 }
