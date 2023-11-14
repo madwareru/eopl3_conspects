@@ -13,6 +13,9 @@ sealed class SExpr {
                 val v = step(init, head)
                 return if (tail !is Pair) { v } else { tail.fold(v, step) }
             }
+
+            fun <T> toList(mapping: (SExpr) -> T): kotlin.collections.List<T> =
+                fold(mutableListOf()) { a, n -> a.add(mapping(n)); a }
         }
 
         companion object {
@@ -48,17 +51,15 @@ sealed class SExpr {
             fun CharIterator.tryNext(): Char? = if (!hasNext()) { null } else { nextChar() }
 
             val charIterator = source.iterator()
-            var eaten: Char? = null
             val stream = mutableListOf<Token>()
+
+            var eatenChar: Char? = null
             var complete = false
 
             while (!complete) {
-                val next = if (eaten != null) {
-                    val c = eaten
-                    eaten = null
-                    c
-                } else {
-                    charIterator.tryNext()
+                val next = when {
+                    eatenChar != null -> { val c = eatenChar; eatenChar = null; c }
+                    else -> charIterator.tryNext()
                 } ?: break
 
                 when {
@@ -74,7 +75,7 @@ sealed class SExpr {
                                 }
                                 else -> {
                                     if (!c.isWhitespace()) {
-                                        eaten = c
+                                        eatenChar = c
                                         stream.add(Token.Whitespace)
                                         break
                                     }
@@ -93,7 +94,7 @@ sealed class SExpr {
                                     break
                                 }
                                 !c.isLetter() && !c.isDigit() && !arrayOf('-', '_', '!', '?', ':').contains(c) -> {
-                                    eaten = c
+                                    eatenChar = c
                                     stream.add(Token.Identifier(tokenData))
                                     break
                                 }
@@ -131,22 +132,21 @@ sealed class SExpr {
                 }
 
                 when (token) {
-                    Token.LParen -> {
-                        groupStack.push(contents)
-                        contents = mutableListOf()
-                    }
+                    Token.LParen -> { groupStack.push(contents); contents = mutableListOf() }
                     Token.RParen -> {
-                        val resultContent = if (contents.isEmpty()) {
-                            List.Empty
-                        } else {
-                            contents.reversed().fold(Nil as SExpr) { a, n -> List.Pair(n, a) }
+                        val resultContent = when {
+                            contents.isNotEmpty() -> contents
+                                .indices
+                                .reversed()
+                                .fold(Nil as SExpr) { a, i -> List.Pair(contents[i], a) }
+                            else -> List.Empty
                         }
 
-                        if (groupStack.isEmpty()) {
-                            result = resultContent
-                        } else {
+                        if (!groupStack.isEmpty()) {
                             contents = groupStack.pop()
                             contents.add(resultContent)
+                        } else {
+                            result = resultContent
                         }
                     }
                     is Token.Identifier -> contents.add(token.toSExpr())
@@ -169,8 +169,10 @@ sealed class LExpr {
 
     fun unParse(): SExpr {
         fun List<LExpr>.toSExpr() : SExpr.List = when {
-            this.isEmpty() -> SExpr.List.Empty
-            else -> reversed().fold(SExpr.Nil as SExpr) { a, n -> SExpr.List.Pair(n.unParse(), a) } as SExpr.List
+            this.isNotEmpty() -> indices
+                .reversed()
+                .fold(SExpr.Nil as SExpr) { a, i -> SExpr.List.Pair(this[i].unParse(), a) } as SExpr.List
+            else -> SExpr.List.Empty
         }
 
         return when (this) {
@@ -184,10 +186,7 @@ sealed class LExpr {
         private fun parseApplication(datum: SExpr.List.Pair): Application {
             val randsList = datum.tail as? SExpr.List.Pair ?: throw ParseException("rands should be pair!")
 
-            return Application(
-                parse(datum.head),
-                randsList.fold(mutableListOf()) { a, n -> a.add(parse(n)); a }
-            )
+            return Application(parse(datum.head), randsList.toList { parse(it) })
         }
 
         private fun parseLambda(datum: SExpr): Lambda {
@@ -200,10 +199,9 @@ sealed class LExpr {
             if (bodyList.tail !is SExpr.Nil) { throw ParseException("found garbage in tail of lambda expr") }
 
             return Lambda(
-                boundVarList.fold(mutableListOf()) { a, n ->
-                    val boundVarIdent = n as? SExpr.Identifier ?: throw ParseException("expected identifier!")
-                    a.add(parseIdentifier(boundVarIdent))
-                    a
+                boundVarList.toList {
+                    val boundVarIdent = it as? SExpr.Identifier ?: throw ParseException("expected identifier!")
+                    parseIdentifier(boundVarIdent)
                 },
                 parse(bodyList.head)
             )
