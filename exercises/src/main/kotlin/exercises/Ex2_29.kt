@@ -88,17 +88,14 @@ sealed class SExpr {
                         while (true) {
                             val c = charIterator.tryNext()
                             when {
-                                c == null -> {
-                                    stream.add(Token.Identifier(tokenData))
-                                    break
-                                }
-                                !c.isLetter() && !c.isDigit() && !arrayOf('-', '_', '!', '?', ':').contains(c) -> {
+                                c == null -> stream.add(Token.Identifier(tokenData))
+                                !(c.isLetter() || c.isDigit() || arrayOf('-', '_', '!', '?', ':').contains(c)) -> {
                                     eatenChar = c
                                     stream.add(Token.Identifier(tokenData))
-                                    break
                                 }
-                                else -> tokenData += c
+                                else -> { tokenData += c; continue }
                             }
+                            break
                         }
                     }
                     else -> scan_error("found a bad character")
@@ -189,19 +186,14 @@ sealed class LExpr {
 
         private fun parseApplication(datum: SExpr.List.Pair): Application {
             val randsList = datum.tail as? SExpr.List.Pair ?: parse_error("rands should be pair!")
-
             return Application(parse(datum.head), randsList.toList { parse(it) })
         }
 
         private fun parseLambda(datum: SExpr): Lambda {
             val (l, r) = datum as? SExpr.List.Pair ?: parse_error("expected pair, found $datum")
-
             val bounds = l as? SExpr.List.Pair ?: parse_error("expected pair, found $l")
-
             val bodyList = r as? SExpr.List.Pair ?: parse_error("expected pair, found $r")
-
             if (bodyList.tail !is SExpr.Nil) { parse_error("found garbage in tail of lambda expr") }
-
             return Lambda(
                 bounds.toList {
                     (it as? SExpr.Identifier)
