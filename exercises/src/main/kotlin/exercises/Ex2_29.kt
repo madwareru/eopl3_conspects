@@ -56,9 +56,8 @@ sealed class SExpr {
             val stream = mutableListOf<Token>()
 
             var eatenChar: Char? = null
-            var complete = false
 
-            while (!complete) {
+            while (true) {
                 val next = when {
                     eatenChar != null -> { val c = eatenChar; eatenChar = null; c }
                     else -> charIterator.tryNext()
@@ -72,7 +71,6 @@ sealed class SExpr {
                             when(val c = charIterator.tryNext()) {
                                 null -> {
                                     stream.add(Token.Whitespace)
-                                    complete = true
                                     break
                                 }
                                 else -> {
@@ -92,7 +90,6 @@ sealed class SExpr {
                             when {
                                 c == null -> {
                                     stream.add(Token.Identifier(tokenData))
-                                    complete = true
                                     break
                                 }
                                 !c.isLetter() && !c.isDigit() && !arrayOf('-', '_', '!', '?', ':').contains(c) -> {
