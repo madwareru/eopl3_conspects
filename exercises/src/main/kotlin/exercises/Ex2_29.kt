@@ -121,13 +121,13 @@ sealed class SExpr {
             for (token in tokens) {
                 if (token == Token.Whitespace) { continue }
 
-                if (result != null) { parse_error("Found tokens after a closing paren") }
+                if (result != null) { parse_error("found tokens after a closing paren") }
 
                 if (justStarted) {
                     when (token) {
                         is Token.Identifier -> result = token.toSExpr()
                         Token.LParen -> {}
-                        else -> parse_error("S-expr is expected to be a single identifier or be opened by '('")
+                        else -> parse_error("s-expr is expected to be a single identifier or be opened by '('")
                     }
                     justStarted = false
                     continue
@@ -156,7 +156,7 @@ sealed class SExpr {
                 }
             }
 
-            return result ?: parse_error("S-expr is expected to be opened by ')'")
+            return result ?: parse_error("s-expr is expected to be closed by ')'")
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
         fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
