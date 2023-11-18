@@ -17,24 +17,24 @@ sealed class PairEnvExp<TKey, TVal> {
     ) : PairEnvExp<TKey, TVal>()
 }
 
-fun <TKey, TValue> PairEnvExp<TKey, TValue>.apply(k: TKey, action: (TValue) -> Unit) {
-    when (this) {
+fun <TKey, TValue, TOut> PairEnvExp<TKey, TValue>.applyImpl(k: TKey, action: (TValue) -> TOut): TOut {
+    return when (this) {
         is PairEnvExp.Empty -> throw NoSuchElementException("the binding for the name $k not found!")
         is PairEnvExp.Extend -> {
             val (name, value) = binding
             if (name == k) {
                 action(value)
             } else {
-                rest.apply(k, action)
+                rest.applyImpl(k, action)
             }
         }
     }
 }
 
-fun <TKey, TValue> PairEnvExp<TKey, TValue>.hasBinding(k: TKey): Boolean {
+fun <TKey, TValue> PairEnvExp<TKey, TValue>.hasBindingImpl(k: TKey): Boolean {
     return when (this) {
         is PairEnvExp.Empty -> false
-        is PairEnvExp.Extend -> { binding.first == k || rest.hasBinding(k) }
+        is PairEnvExp.Extend -> { binding.first == k || rest.hasBindingImpl(k) }
     }
 }
 
@@ -47,8 +47,8 @@ val pairEnvScope = EnvScope<PairEnvExp<String, Int>, String, Int>(
             .reversed()
             .fold(env) { e, binding -> PairEnvExp.Extend( binding, rest = e ) }
     },
-    hasBinding = { env, k -> env.hasBinding(k) },
-    applyEnv = { env, k, action -> env.apply(k, action) }
+    hasBinding = { env, k -> env.hasBindingImpl(k) },
+    applyEnv = { env, k, action -> env.applyImpl(k, action) }
 )
 
 sealed class RibCageEnvExp<TKey, TVal> {
@@ -59,19 +59,19 @@ sealed class RibCageEnvExp<TKey, TVal> {
     ) : RibCageEnvExp<TKey, TVal>()
 }
 
-fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.apply(k: TKey, action: (TValue) -> Unit) {
-    when (this) {
+fun <TKey, TValue, TOut> RibCageEnvExp<TKey, TValue>.applyImpl(k: TKey, action: (TValue) -> TOut): TOut {
+    return when (this) {
         is RibCageEnvExp.Empty -> throw NoSuchElementException("the binding for the name $k not found!")
         is RibCageEnvExp.Extend -> {
             bindings
                 .firstOrNull { it.first == k }
                 ?.let { action(it.second) }
-                ?: rest.apply(k, action)
+                ?: rest.applyImpl(k, action)
         }
     }
 }
 
-fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.hasBinding(k: TKey): Boolean =
+fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.hasBindingImpl(k: TKey): Boolean =
     when (this) {
         is RibCageEnvExp.Empty -> false
         is RibCageEnvExp.Extend -> {
@@ -84,8 +84,8 @@ val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
     isEmpty = { it is RibCageEnvExp.Empty },
     extendEnv = { env, k, v -> RibCageEnvExp.Extend( bindings = arrayOf(k to v), rest = env ) },
     extendEnvMany = { env, pairs -> RibCageEnvExp.Extend( bindings = pairs, rest = env )},
-    hasBinding = { env, k -> env.hasBinding(k) },
-    applyEnv = { env, k, action -> env.apply(k, action) }
+    hasBinding = { env, k -> env.hasBindingImpl(k) },
+    applyEnv = { env, k, action -> env.applyImpl(k, action) }
 )
 
 fun <TKey, TVal> makeEmptyEnv(): ((TKey) -> TVal?)? = null

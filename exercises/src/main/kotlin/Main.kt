@@ -1,13 +1,12 @@
-import exercises.ex2_1
-import exercises.ex2_15
-import exercises.ex2_29
-import exercises.ex2_5
+import exercises.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
 val exerciseLookup = hashMapOf(
     "2.1" to ::ex2_1,
+    "2.1 v2" to ::ex2_1_v2,
     "2.5" to ::ex2_5,
+    "2.5 v2" to ::ex2_5_v2,
     "2.15" to ::ex2_15,
     "2.29" to ::ex2_29
 )
