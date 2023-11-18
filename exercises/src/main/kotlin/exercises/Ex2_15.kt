@@ -2,6 +2,7 @@ package exercises
 
 data class LambdaExpr<TLcExp, TVar>(val boundVar: TVar, val body: TLcExp)
 data class ApplicationExpr<TLcExp>(val rator: TLcExp, val rand: TLcExp)
+
 data class LcExpScope<TLcExp, TVar> (
     // constructors:
     val varExpr: (TVar) -> TLcExp,

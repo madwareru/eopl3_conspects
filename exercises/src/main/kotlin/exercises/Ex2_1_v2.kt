@@ -2,57 +2,57 @@ package exercises
 
 interface NatNumberADT<TImpl> {
     fun zero(): TImpl
-    fun isZero(num: TImpl): Boolean
-    fun succ(num: TImpl): TImpl
-    fun pred(num: TImpl): TImpl
+    fun TImpl.isZero(): Boolean
+    fun TImpl.succ(): TImpl
+    fun TImpl.pred(): TImpl
 
-    fun toInt(num: TImpl): Int = if (isZero(num)) { 0 } else { 1 + toInt(pred(num)) }
-    fun plus(x: TImpl, y: TImpl): TImpl = if (isZero(y)) { x } else { plus(succ(x), pred(y)) }
-    fun minus(x: TImpl, y: TImpl): TImpl = if (isZero(y)) { x } else { minus(pred(x), pred(y)) }
-    fun multiply(x: TImpl, y: TImpl): TImpl =
+    fun TImpl.toInt(): Int = if (isZero()) { 0 } else { 1 + pred().toInt() }
+    operator fun TImpl.plus(other: TImpl): TImpl = if (other.isZero()) { this } else { succ() + other.pred() }
+    operator fun TImpl.minus(other: TImpl): TImpl = if (other.isZero()) { this } else { pred() - other.pred() }
+    operator fun TImpl.times(other: TImpl): TImpl =
         when {
-            isZero(x) || isZero(y) -> zero()
-            isZero(pred(y)) -> x
-            else -> plus(x, multiply(x, pred(y)))
+            isZero() || other.isZero() -> zero()
+            other.pred().isZero() -> this
+            else -> this + times(other.pred())
         }
 }
 
 val bigIntNatNumberADT = object : NatNumberADT<UByteBigInt> {
     override fun zero(): UByteBigInt = makeZeroBigNum()
-    override fun isZero(num: UByteBigInt): Boolean = num.isZero()
-    override fun pred(num: UByteBigInt): UByteBigInt = num.pred()
-    override fun succ(num: UByteBigInt): UByteBigInt = num.succ()
+    override fun UByteBigInt.isZero(): Boolean = isZeroImpl()
+    override fun UByteBigInt.pred(): UByteBigInt = predImpl()
+    override fun UByteBigInt.succ(): UByteBigInt = succImpl()
 }
 
 val unaryNatNumberADT = object : NatNumberADT<UnaryRepr> {
     override fun zero() = UnaryRepr.Zero
-    override fun isZero(num: UnaryRepr) = num is UnaryRepr.Zero
-    override fun pred(num: UnaryRepr): UnaryRepr =
-        (num as? UnaryRepr.Succ)?.tail ?: throw NoSuchElementException("called pred on zero!")
-    override fun succ(num: UnaryRepr): UnaryRepr = UnaryRepr.Succ(num)
+    override fun UnaryRepr.isZero() = this is UnaryRepr.Zero
+    override fun UnaryRepr.pred(): UnaryRepr =
+        (this as? UnaryRepr.Succ)?.tail ?: throw NoSuchElementException("called pred on zero!")
+    override fun UnaryRepr.succ(): UnaryRepr = UnaryRepr.Succ(this)
 }
 
 val intNatNumberADT = object : NatNumberADT<Int> {
     override fun zero(): Int = 0
-    override fun isZero(num: Int): Boolean = num == 0
-    override fun pred(num: Int): Int =
-        if (num > 0) { num - 1} else { throw NoSuchElementException("called pred on zero!") }
-    override fun succ(num: Int): Int = num + 1
+    override fun Int.isZero(): Boolean = this == 0
+    override fun Int.pred(): Int =
+        if (this > 0) { this - 1} else { throw NoSuchElementException("called pred on zero!") }
+    override fun Int.succ(): Int = this + 1
 }
 
 val listNatNumberADT = object : NatNumberADT<List<Boolean>> {
     override fun zero(): List<Boolean> = listOf()
-    override fun isZero(num: List<Boolean>): Boolean = num.isEmpty()
-    override fun pred(num: List<Boolean>): List<Boolean> =
-        if (num.isNotEmpty()) {
-            val copy = num.toMutableList()
+    override fun List<Boolean>.isZero(): Boolean = isEmpty()
+    override fun List<Boolean>.pred(): List<Boolean> =
+        if (this.isNotEmpty()) {
+            val copy = toMutableList()
             copy.removeLast()
             copy
         } else {
             throw NoSuchElementException("called pred on zero!")
         }
-    override fun succ(num: List<Boolean>): List<Boolean> {
-        val copy = num.toMutableList()
+    override fun List<Boolean>.succ(): List<Boolean> {
+        val copy = toMutableList()
         copy.add(true)
         return copy
     }
@@ -61,26 +61,21 @@ val listNatNumberADT = object : NatNumberADT<List<Boolean>> {
 fun ex2_1_v2() {
     fun<T> testScope(scope: () -> NatNumberADT<T>): () -> Unit = {
         with(scope()) {
-            fun factorial(it: T): T =
-                if (isZero(it) || isZero(pred(it))) {
-                    it
-                } else {
-                    multiply(it, factorial(pred(it)))
-                }
+            fun factorial(x: T): T = if (x.isZero() || x.pred().isZero()) { x } else { x * factorial(x.pred()) }
 
-            val x = zero(); println("${toInt(x)} is zero: ${isZero(x)}")
-            val y = succ(x); println("${toInt(y)} is zero: ${isZero(y)}")
-            val z = pred(y); println("${toInt(z)} is zero: ${isZero(z)}")
-            val w = plus(plus(y, y), plus(y, y)); println("${toInt(w)} is zero: ${isZero(w)}")
-            val a = minus(w, y); println("${toInt(a)} is zero: ${isZero(a)}")
-            val b = minus(w, a); println("${toInt(b)} is zero: ${isZero(b)}")
-            val c = multiply(w, a); println("${toInt(c)} is zero: ${isZero(c)}")
+            val x = zero(); println("${x.toInt()} is zero: ${x.isZero()}")
+            val y = x.succ(); println("${y.toInt()} is zero: ${y.isZero()}")
+            val z = y.pred(); println("${z.toInt()} is zero: ${z.isZero()}")
+            val w = y + y + y + y; println("${w.toInt()} is zero: ${w.isZero()}")
+            val a = w - y; println("${a.toInt()} is zero: ${a.isZero()}")
+            val b = w - a; println("${b.toInt()} is zero: ${b.isZero()}")
+            val c = w * a; println("${c.toInt()} is zero: ${c.isZero()}")
 
-            val f0 = factorial(w); println("fact(${toInt(w)}) = ${toInt(f0)}")
+            val f0 = factorial(w); println("fact(${w.toInt()}) = ${f0.toInt()}")
 
-            val six = pred(pred(pred(pred(pred(pred(c))))))
+            val six = (c * w).pred().pred()
 
-            val f = factorial(six); println("fact(${toInt(six)}) = ${toInt(f)}")
+            val f = factorial(six); println("fact(${six.toInt()}) = ${f.toInt()}")
         }
     }
 

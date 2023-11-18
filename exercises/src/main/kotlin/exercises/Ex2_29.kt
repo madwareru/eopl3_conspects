@@ -1,7 +1,6 @@
 package exercises
 
 import java.util.Stack
-
 sealed class SExpr {
     data class Identifier(val data: String) : SExpr()
     sealed class List : SExpr() {
