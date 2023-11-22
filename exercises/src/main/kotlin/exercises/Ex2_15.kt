@@ -10,21 +10,23 @@ data class LcExpScope<TLcExp, TVar> (
     val appExpr: (TLcExp, TLcExp) -> TLcExp,
 
     // extractors (predicates aren't needed):
-    val asVarExpr: (TLcExp) -> TVar?,
-    val asLambdaExpr: (TLcExp) -> LambdaExpr<TLcExp, TVar>?,
-    val asAppExpr: (TLcExp) -> ApplicationExpr<TLcExp>?
+    val asVarExpr: (TLcExp) -> Option<TVar>,
+    val asLambdaExpr: (TLcExp) -> Option<LambdaExpr<TLcExp, TVar>>,
+    val asAppExpr: (TLcExp) -> Option<ApplicationExpr<TLcExp>>
 ) {
-    fun <TRes> match(
+    private inline fun <TRes> match(
         exp: TLcExp,
         caseVar: (TVar) -> TRes,
         caseLambda: (LambdaExpr<TLcExp, TVar>) -> TRes,
         caseApplication: (ApplicationExpr<TLcExp>) -> TRes
-    ): TRes {
-        return asVarExpr(exp)?.let(caseVar)
-            ?: asLambdaExpr(exp)?.let(caseLambda)
-            ?: asAppExpr(exp)?.let(caseApplication)
-            ?: throw IllegalArgumentException("exp is neither var, lambda or app")
-    }
+    ): TRes =
+        asVarExpr(exp).map(caseVar).unwrapOr {
+            asLambdaExpr(exp).map(caseLambda).unwrapOr {
+                asAppExpr(exp).map(caseApplication).unwrapOr {
+                    throw IllegalArgumentException("exp is neither var, lambda or app")
+                }
+            }
+        }
 
     fun occursFree(searchVar: TVar, exp: TLcExp): Boolean =
         match(
@@ -45,9 +47,15 @@ val lcExpressionScope = LcExpScope<LcExpression, String> (
     varExpr = { LcExpression.Var(it) },
     lambdaExpr = { boundIdent, body -> LcExpression.Lambda(boundIdent, body) },
     appExpr = { rator, rand -> LcExpression.Application(rator, rand) },
-    asVarExpr = { (it as? LcExpression.Var)?.ident },
-    asLambdaExpr = { (it as? LcExpression.Lambda)?.let { l -> LambdaExpr(l.boundVarIdent, l.body) } },
-    asAppExpr = { (it as? LcExpression.Application)?.let { a -> ApplicationExpr(a.rator, a.rand) } }
+    asVarExpr = {
+        if (it is LcExpression.Var) { some { it.ident } } else { none() }
+    },
+    asLambdaExpr = {
+        if (it is LcExpression.Lambda) { some { LambdaExpr(it.boundVarIdent, it.body) } } else { none() }
+    },
+    asAppExpr = {
+        if (it is LcExpression.Application) { some {ApplicationExpr(it.rator, it.rand)} } else { none() }
+    }
 )
 
 fun ex2_15() {

@@ -44,56 +44,75 @@ sealed class SExpr {
         private fun scan_error(errorMessage: String): Nothing = throw ScanException(errorMessage)
 
         private fun scan(source: String): kotlin.collections.List<Token> {
-            fun CharIterator.tryNext(): Char? = if (!hasNext()) { null } else { nextChar() }
+            fun CharIterator.tryNext(): Option<Char> = if (!hasNext()) {
+                none()
+            } else {
+                some { nextChar() }
+            }
 
             val charIterator = source.iterator()
             val stream = mutableListOf<Token>()
 
-            var eatenChar: Char? = null
+            var eatenChar: Option<Char> = none()
 
             while (true) {
-                val next = when {
-                    eatenChar != null -> { val c = eatenChar; eatenChar = null; c }
-                    else -> charIterator.tryNext()
-                } ?: break
+                val next = when (eatenChar) {
+                    is Option.None -> charIterator.tryNext()
+                    is Option.Some -> { val c = eatenChar; eatenChar = none(); c }
+                }
 
-                when {
-                    next == '(' -> stream.add(Token.LParen)
-                    next == ')' -> stream.add(Token.RParen)
-                    next.isWhitespace() -> {
-                        while (true) {
-                            when(val c = charIterator.tryNext()) {
-                                null -> {
-                                    stream.add(Token.Whitespace)
-                                    break
-                                }
-                                else -> {
-                                    if (!c.isWhitespace()) {
-                                        eatenChar = c
-                                        stream.add(Token.Whitespace)
-                                        break
+                when (next) {
+                    is Option.None -> break
+                    is Option.Some -> {
+                        val nc = next.value
+                        when {
+                            nc == '(' -> stream.add(Token.LParen)
+                            nc == ')' -> stream.add(Token.RParen)
+                            nc.isWhitespace() -> {
+                                while (true) {
+                                    when(val c = charIterator.tryNext()) {
+                                        is Option.None -> {
+                                            stream.add(Token.Whitespace)
+                                            break
+                                        }
+                                        is Option.Some -> {
+                                            if (!c.value.isWhitespace()) {
+                                                eatenChar = c
+                                                stream.add(Token.Whitespace)
+                                                break
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
-                    next.isLetter() || next == ':' || next == '_' -> {
-                        var tokenData = String(charArrayOf(next))
-                        while (true) {
-                            val c = charIterator.tryNext()
-                            when {
-                                c == null -> stream.add(Token.Identifier(tokenData))
-                                !(c.isLetter() || c.isDigit() || arrayOf('-', '_', '!', '?', ':').contains(c)) -> {
-                                    eatenChar = c
-                                    stream.add(Token.Identifier(tokenData))
+                            nc.isLetter() || nc == ':' || nc == '_' -> {
+                                var tokenData = String(charArrayOf(nc))
+                                while (true) {
+                                    when (val c = charIterator.tryNext()) {
+                                        is Option.None -> stream.add(Token.Identifier(tokenData))
+                                        is Option.Some -> when {
+                                            !(
+                                                c.value.isLetter() ||
+                                                c.value.isDigit() ||
+                                                arrayOf('-', '_', '!', '?', ':').contains(c.value)
+                                            ) -> {
+                                                eatenChar = c
+                                                stream.add(Token.Identifier(tokenData))
+                                            }
+                                            else -> {
+                                                tokenData += c.value
+                                                continue
+                                            }
+                                        }
+                                    }
+                                    break
                                 }
-                                else -> { tokenData += c; continue }
                             }
-                            break
+                            else -> scan_error("found a bad character")
                         }
                     }
-                    else -> scan_error("found a bad character")
                 }
+
             }
 
             return stream
@@ -107,16 +126,16 @@ sealed class SExpr {
             val groupStack: Stack<MutableList<SExpr>> = Stack()
             var justStarted = true
 
-            var result: SExpr? = null
+            var result: Option<SExpr> = none()
 
             for (token in tokens) {
                 if (token == Token.Whitespace) { continue }
 
-                if (result != null) { parse_error("found tokens after a closing paren") }
+                if (!result.isNone) { parse_error("found tokens after a closing paren") }
 
                 if (justStarted) {
                     when (token) {
-                        is Token.Identifier -> result = Identifier(token.data)
+                        is Token.Identifier -> result = some { Identifier(token.data) }
                         Token.LParen -> {}
                         else -> parse_error("s-expr is expected to be a single identifier or be opened by '('")
                     }
@@ -139,7 +158,7 @@ sealed class SExpr {
                             contents = groupStack.pop()
                             contents.add(resultContent)
                         } else {
-                            result = resultContent
+                            result = some { resultContent }
                         }
                     }
                     is Token.Identifier -> contents.add(Identifier(token.data))
@@ -147,7 +166,7 @@ sealed class SExpr {
                 }
             }
 
-            return result ?: parse_error("s-expr is expected to be closed by ')'")
+            return result.unwrapOr { parse_error("s-expr is expected to be closed by ')'") }
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
         fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
@@ -179,20 +198,20 @@ sealed class LExpr {
         private fun parse_error(errorMessage: String): Nothing = throw ParseException(errorMessage)
 
         private fun parseApplication(datum: SExpr.List.Pair): Application {
-            val randsList = datum.tail as? SExpr.List.Pair ?: parse_error("rands should be pair!")
+            val randsList = datum.tail.tryCast<SExpr.List.Pair>().unwrapOr { parse_error("rands should be pair!") }
             return Application(parse(datum.head), randsList.toList { parse(it) })
         }
 
         private fun parseLambda(datum: SExpr): Lambda {
-            val (l, r) = datum as? SExpr.List.Pair ?: parse_error("expected pair, found $datum")
-            val bounds = l as? SExpr.List.Pair ?: parse_error("expected pair, found $l")
-            val bodyList = r as? SExpr.List.Pair ?: parse_error("expected pair, found $r")
-            if (bodyList.tail !is SExpr.List.Empty) { parse_error("found garbage in tail of lambda expr") }
+            val (l, r) = datum.tryCast<SExpr.List.Pair>().unwrapOr { parse_error("expected pair, found $datum") }
+            val bounds = l.tryCast<SExpr.List.Pair>().unwrapOr { parse_error("expected pair, found $l") }
+            val bodyList = r.tryCast<SExpr.List.Pair>().unwrapOr { parse_error("expected pair, found $r") }
+            if (bodyList.tail.tryCast<SExpr.List.Empty>().isNone ) { parse_error("found garbage in tail of lambda expr") }
             return Lambda(
                 bounds.toList {
-                    (it as? SExpr.Identifier)
-                        ?.let(::parseIdent)
-                        ?: parse_error("expected identifier, found $it")
+                    it.tryCast<SExpr.Identifier>()
+                        .map(::parseIdent)
+                        .unwrapOr { parse_error("expected identifier, found $it") }
                 },
                 parse(bodyList.head)
             )

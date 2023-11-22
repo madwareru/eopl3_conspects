@@ -81,7 +81,10 @@ val unaryNatNumber = NatNumberScope<UnaryRepr>(
     zero = { UnaryRepr.Zero },
     isZero = { it is UnaryRepr.Zero },
     succ = { UnaryRepr.Succ(it) },
-    pred = { (it as? UnaryRepr.Succ)?.tail ?: throw NoSuchElementException("called pred on zero!") }
+    pred = { it.tryCast<UnaryRepr.Succ>()
+        .map { x -> x.tail }
+        .unwrapOr { throw NoSuchElementException("called pred on zero!") }
+    }
 )
 
 val intNatNumber = NatNumberScope(

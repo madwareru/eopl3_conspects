@@ -64,9 +64,9 @@ fun <TKey, TValue, TOut> RibCageEnvExp<TKey, TValue>.applyImpl(k: TKey, action: 
         is RibCageEnvExp.Empty -> throw NoSuchElementException("the binding for the name $k not found!")
         is RibCageEnvExp.Extend -> {
             bindings
-                .firstOrNull { it.first == k }
-                ?.let { action(it.second) }
-                ?: rest.applyImpl(k, action)
+                .firstOrNone { it.first == k }
+                .map { action(it.second) }
+                .unwrapOr { rest.applyImpl(k, action) }
         }
     }
 }
@@ -74,9 +74,7 @@ fun <TKey, TValue, TOut> RibCageEnvExp<TKey, TValue>.applyImpl(k: TKey, action: 
 fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.hasBindingImpl(k: TKey): Boolean =
     when (this) {
         is RibCageEnvExp.Empty -> false
-        is RibCageEnvExp.Extend -> {
-            bindings.firstOrNull { it.first == k } != null
-        }
+        is RibCageEnvExp.Extend -> !bindings.firstOrNone { it.first == k }.isNone
     }
 
 val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
@@ -88,24 +86,26 @@ val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
     applyEnv = { env, k, action -> env.applyImpl(k, action) }
 )
 
-fun <TKey, TVal> makeEmptyEnv(): ((TKey) -> TVal?)? = null
-fun <TKey, TVal> ((TKey) -> TVal?)?.extendEnv(savedVar: TKey, savedVal: TVal): (TKey) -> TVal? =
-    { searchVar -> if (searchVar == savedVar) { savedVal } else { this?.let { this(searchVar) } } }
+fun <TKey, TVal> makeEmptyEnv(): Option<(TKey) -> Option<TVal>> = none()
+fun <TKey, TVal> Option<(TKey) -> Option<TVal>>.extendEnv(savedVar: TKey, savedVal: TVal): (TKey) -> Option<TVal> =
+    { searchVar -> if (searchVar == savedVar) { some { savedVal } } else { flatMap { it(searchVar) } } }
 
-val proceduralEnvScope = EnvScope<((String) -> Int?)?, String, Int>(
+val proceduralEnvScope = EnvScope<Option<(String) -> Option<Int>>, String, Int>(
     emptyEnv = { makeEmptyEnv() },
-    isEmpty = { it == null },
-    extendEnv = { env, k, v -> env.extendEnv(k, v) },
+    isEmpty = { it.isNone },
+    extendEnv = { env, k, v -> some { env.extendEnv(k, v) } },
     extendEnvMany = { env, pairs ->
         pairs
             .reversed()
-            .fold(env) { e, binding -> e.extendEnv(binding.first, binding.second)  }
+            .fold(env) { e, binding -> some { e.extendEnv(binding.first, binding.second) } }
     },
-    hasBinding = { env, k -> env != null && env(k) != null },
-    applyEnv = { env, k, action ->
-        env?.let { it(k) }
-            ?.let(action)
-            ?: throw NoSuchElementException("the binding for the name $k not found!")
+    hasBinding = { env, k -> !env.map { it(k) }.isNone },
+    applyEnv = { env, k, action -> env
+        .flatMap { it(k) }
+        .map (action)
+        .unwrapOr {
+            throw NoSuchElementException("the binding for the name $k not found!")
+        }
     }
 )
 

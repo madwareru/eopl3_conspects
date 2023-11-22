@@ -1,9 +1,18 @@
 package exercises
 
 interface LcExpADT<TImpl, TVar> {
+    // variable constructor
+    // !this => this
     operator fun TVar.not(): TImpl
+
+    // lambda constructor
+    // this % body => LambdaExpr(this, body)
     operator fun TVar.rem(body: TImpl): TImpl
+
+    // application constructor
+    // this * rand => ApplicationExpr(this, rand)
     operator fun TImpl.times(rand: TImpl): TImpl
+
     fun <TOut> TImpl.match(
         caseVar: (TVar) -> TOut,
         caseLambda: (LambdaExpr<TImpl, TVar>) -> TOut,
@@ -18,11 +27,21 @@ interface LcExpADT<TImpl, TVar> {
 }
 
 val lcExpressionADT = object : LcExpADT<LcExpression, String> {
-    override operator fun String.not(): LcExpression = LcExpression.Var(this)
+    // variable constructor
+    // !this => this
+    override operator fun String.not(): LcExpression =
+        LcExpression.Var(this)
+
+    // lambda constructor
+    // this % body => LambdaExpr(this, body)
     override operator fun String.rem(body: LcExpression): LcExpression =
         LcExpression.Lambda(this, body)
+
+    // application constructor
+    // this * rand => ApplicationExpr(this, rand)
     override operator fun LcExpression.times(rand: LcExpression): LcExpression =
         LcExpression.Application(this, rand)
+
     override fun <TOut> LcExpression.match(
         caseVar: (String) -> TOut,
         caseLambda: (LambdaExpr<LcExpression, String>) -> TOut,

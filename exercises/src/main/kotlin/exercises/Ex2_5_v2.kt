@@ -12,7 +12,8 @@ interface EnvironmentADT<TImpl, TKey, TVal> {
 val pairEnvADT = object : EnvironmentADT<PairEnvExp<String, Int>, String, Int> {
     override fun empty(): PairEnvExp<String, Int> = PairEnvExp.Empty()
 
-    override fun <TOut> PairEnvExp<String, Int>.apply(key: String, action: (Int) -> TOut): TOut = applyImpl(key, action)
+    override fun <TOut> PairEnvExp<String, Int>.apply(key: String, action: (Int) -> TOut): TOut =
+        applyImpl(key, action)
 
     override fun PairEnvExp<String, Int>.hasBinding(key: String): Boolean = hasBindingImpl(key)
 
@@ -27,7 +28,8 @@ val pairEnvADT = object : EnvironmentADT<PairEnvExp<String, Int>, String, Int> {
 
 val ribCageEnvADT = object : EnvironmentADT<RibCageEnvExp<String, Int>, String, Int> {
     override fun empty(): RibCageEnvExp<String, Int> = RibCageEnvExp.Empty()
-    override fun <TOut> RibCageEnvExp<String, Int>.apply(key: String, action: (Int) -> TOut): TOut = applyImpl(key, action)
+    override fun <TOut> RibCageEnvExp<String, Int>.apply(key: String, action: (Int) -> TOut): TOut =
+        applyImpl(key, action)
 
     override fun RibCageEnvExp<String, Int>.hasBinding(key: String): Boolean = hasBindingImpl(key)
 
@@ -40,28 +42,31 @@ val ribCageEnvADT = object : EnvironmentADT<RibCageEnvExp<String, Int>, String, 
     override fun RibCageEnvExp<String, Int>.isEmpty(): Boolean = this is RibCageEnvExp.Empty
 }
 
-val proceduralEnvADT = object : EnvironmentADT<((String) -> Int?)?, String, Int> {
-    override fun empty(): ((String) -> Int?)? = makeEmptyEnv()
+val proceduralEnvADT = object : EnvironmentADT<Option<(String) -> Option<Int>>, String, Int> {
+    override fun empty(): Option<(String) -> Option<Int>> = makeEmptyEnv()
 
-    override fun <TOut> ((String) -> Int?)?.apply(key: String, action: (Int) -> TOut): TOut {
-        return this
-            ?.let { it(key) }
-            ?.let(action)
-            ?: throw NoSuchElementException("the binding for the name $key not found!")
-    }
+    override fun <TOut> Option<(String) -> Option<Int>>.apply(key: String, action: (Int) -> TOut): TOut =
+        flatMap { it(key) }
+            .map (action)
+            .unwrapOr {
+                throw NoSuchElementException("the binding for the name $key not found!")
+            }
 
-    override fun ((String) -> Int?)?.hasBinding(key: String): Boolean =
-        this != null && this(key) != null
+    override fun Option<(String) -> Option<Int>>.hasBinding(key: String): Boolean =
+        !map { it(key) }.isNone
 
-    override fun ((String) -> Int?)?.extendMany(vararg pairs: Pair<String, Int>): ((String) -> Int?)? {
+    override fun Option<(String) -> Option<Int>>.extendMany(
+        vararg pairs: Pair<String, Int>): Option<(String
+    ) -> Option<Int>> {
         return pairs
             .reversed()
-            .fold(this) { e, binding -> e.extendEnv(binding.first, binding.second)  }
+            .fold(this) { e, binding -> some {e.extendEnv(binding.first, binding.second) } }
     }
 
-    override fun ((String) -> Int?)?.extend(key: String, value: Int): (String) -> Int? = extendEnv(key, value)
+    override fun Option<(String) -> Option<Int>>.extend(key: String, value: Int): Option<(String) -> Option<Int>> =
+        some { extendEnv(key, value) }
 
-    override fun ((String) -> Int?)?.isEmpty(): Boolean = this == null
+    override fun Option<(String) -> Option<Int>>.isEmpty(): Boolean = isNone
 }
 
 fun ex2_5_v2() {

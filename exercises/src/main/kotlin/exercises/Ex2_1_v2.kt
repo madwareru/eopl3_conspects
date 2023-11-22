@@ -27,8 +27,10 @@ val bigIntNatNumberADT = object : NatNumberADT<UByteBigInt> {
 val unaryNatNumberADT = object : NatNumberADT<UnaryRepr> {
     override fun zero() = UnaryRepr.Zero
     override fun UnaryRepr.isZero() = this is UnaryRepr.Zero
-    override fun UnaryRepr.pred(): UnaryRepr =
-        (this as? UnaryRepr.Succ)?.tail ?: throw NoSuchElementException("called pred on zero!")
+    override fun UnaryRepr.pred(): UnaryRepr = this
+        .tryCast<UnaryRepr.Succ>()
+        .map { it.tail }
+        .unwrapOr { throw NoSuchElementException("called pred on zero!") }
     override fun UnaryRepr.succ(): UnaryRepr = UnaryRepr.Succ(this)
 }
 
