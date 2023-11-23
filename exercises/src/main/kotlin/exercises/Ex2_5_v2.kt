@@ -53,7 +53,7 @@ val proceduralEnvADT = object : EnvironmentADT<Option<(String) -> Option<Int>>, 
             }
 
     override fun Option<(String) -> Option<Int>>.hasBinding(key: String): Boolean =
-        !map { it(key) }.isNone
+        map { it(key) } is Option.Some
 
     override fun Option<(String) -> Option<Int>>.extendMany(
         vararg pairs: Pair<String, Int>): Option<(String
@@ -66,7 +66,7 @@ val proceduralEnvADT = object : EnvironmentADT<Option<(String) -> Option<Int>>, 
     override fun Option<(String) -> Option<Int>>.extend(key: String, value: Int): Option<(String) -> Option<Int>> =
         some { extendEnv(key, value) }
 
-    override fun Option<(String) -> Option<Int>>.isEmpty(): Boolean = isNone
+    override fun Option<(String) -> Option<Int>>.isEmpty(): Boolean = this is Option.None
 }
 
 fun ex2_5_v2() {

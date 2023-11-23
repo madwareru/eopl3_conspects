@@ -5,7 +5,6 @@ sealed class Option<out T> {
     class None<out T>: Option<T>()
 }
 
-val<T> Option<T>.isNone get() = this is Option.None<T>
 inline fun<T0, T1> Option<T0>.map(mapper: (T0) -> T1): Option<T1> =
     when (this) {
         is Option.None -> none()
@@ -24,13 +23,14 @@ inline fun<T> Option<T>.unwrapOr(default: () -> T) =
         else -> default()
     }
 
-fun <T> Option<T>.unwrap() = (this as Option.Some).value
-
 inline fun <reified T> Any.tryCast(): Option<T> =
     if (this is T) { some { this } } else { none() }
 
 inline fun<T> some(x: () -> T) = Option.Some(x())
 fun<T> none() = Option.None<T>()
+
+inline fun<T> Boolean.guard(action: () -> T): Option<T> =
+    if (this) { some { action() } } else { none() }
 
 inline fun <T> Array<out T>.firstOrNone(predicate: (T) -> Boolean): Option<T> {
     for (element in this) if (predicate(element)) return some { element }

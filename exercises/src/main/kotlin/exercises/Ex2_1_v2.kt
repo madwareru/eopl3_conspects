@@ -6,9 +6,15 @@ interface NatNumberADT<TImpl> {
     fun TImpl.succ(): TImpl
     fun TImpl.pred(): TImpl
 
-    fun TImpl.toInt(): Int = if (isZero()) { 0 } else { 1 + pred().toInt() }
-    operator fun TImpl.plus(other: TImpl): TImpl = if (other.isZero()) { this } else { succ() + other.pred() }
-    operator fun TImpl.minus(other: TImpl): TImpl = if (other.isZero()) { this } else { pred() - other.pred() }
+    fun TImpl.toInt(): Int = isZero()
+        .guard { 0 }
+        .unwrapOr { 1 + pred().toInt() }
+    operator fun TImpl.plus(other: TImpl): TImpl = other.isZero()
+        .guard { this }
+        .unwrapOr { succ() + other.pred() }
+    operator fun TImpl.minus(other: TImpl): TImpl = other.isZero()
+        .guard { this }
+        .unwrapOr { pred() - other.pred() }
     operator fun TImpl.times(other: TImpl): TImpl =
         when {
             isZero() || other.isZero() -> zero()
@@ -37,22 +43,24 @@ val unaryNatNumberADT = object : NatNumberADT<UnaryRepr> {
 val intNatNumberADT = object : NatNumberADT<Int> {
     override fun zero(): Int = 0
     override fun Int.isZero(): Boolean = this == 0
-    override fun Int.pred(): Int =
-        if (this > 0) { this - 1} else { throw NoSuchElementException("called pred on zero!") }
+    override fun Int.pred(): Int = (this > 0)
+        .guard { this - 1}
+        .unwrapOr { throw NoSuchElementException("called pred on zero!") }
     override fun Int.succ(): Int = this + 1
 }
 
 val listNatNumberADT = object : NatNumberADT<List<Boolean>> {
     override fun zero(): List<Boolean> = listOf()
     override fun List<Boolean>.isZero(): Boolean = isEmpty()
-    override fun List<Boolean>.pred(): List<Boolean> =
-        if (this.isNotEmpty()) {
+    override fun List<Boolean>.pred(): List<Boolean> = isNotEmpty()
+        .guard {
             val copy = toMutableList()
             copy.removeLast()
             copy
-        } else {
+        }.unwrapOr {
             throw NoSuchElementException("called pred on zero!")
         }
+    
     override fun List<Boolean>.succ(): List<Boolean> {
         val copy = toMutableList()
         copy.add(true)

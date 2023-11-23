@@ -6,9 +6,9 @@ data class NatNumberScope<T>(
     val succ: (T) -> T,
     val pred: (T) -> T
 ) {
-    val toInt: (T) -> Int get() = { if (isZero(it)) { 0 } else { 1 + toInt(pred(it)) } }
-    val plus: (T, T) -> T get() = { x, y -> if (isZero(y)) { x } else { plus(succ(x), pred(y)) } }
-    val minus: (T, T) -> T get() = { x, y -> if (isZero(y)) { x } else { minus(pred(x), pred(y)) } }
+    val toInt: (T) -> Int get() = { isZero(it).guard { 0 }.unwrapOr { 1 + toInt(pred(it)) } }
+    val plus: (T, T) -> T get() = { x, y -> isZero(y).guard { x }.unwrapOr { plus(succ(x), pred(y)) } }
+    val minus: (T, T) -> T get() = { x, y -> isZero(y).guard { x }.unwrapOr { minus(pred(x), pred(y)) } }
     val multiply: (T, T) -> T get() = { x, y ->
         when {
             isZero(x) || isZero(y) -> zero()
@@ -23,11 +23,9 @@ data class UByteBigInt(val bytes: List<UByte>)
 fun makeZeroBigNum() = UByteBigInt(listOf(UByte.MIN_VALUE))
 
 fun incWithCarry(b: UByte): Pair<UByte, Boolean> =
-    if (b < UByte.MAX_VALUE) {
-        b.inc() to false
-    } else {
-        UByte.MIN_VALUE to true
-    }
+    (b < UByte.MAX_VALUE)
+        .guard { b.inc() to false }
+        .unwrapOr { UByte.MIN_VALUE to true }
 
 fun UByteBigInt.succImpl(): UByteBigInt {
     val copyBytes = this.bytes.toMutableList()
@@ -46,31 +44,25 @@ fun UByteBigInt.succImpl(): UByteBigInt {
     return UByteBigInt(copyBytes)
 }
 
-fun decWithCarry(b: UByte): Pair<UByte, Boolean>
-    = if (b > UByte.MIN_VALUE) {
-        b.dec() to false
-    } else {
-        UByte.MAX_VALUE to true
-    }
+fun decWithCarry(b: UByte): Pair<UByte, Boolean> =
+    (b > UByte.MIN_VALUE)
+        .guard { b.dec() to false }
+        .unwrapOr { UByte.MAX_VALUE to true }
 
-fun UByteBigInt.isZeroImpl(): Boolean = this.bytes.all { it == UByte.MIN_VALUE }
+fun UByteBigInt.isZeroImpl(): Boolean = bytes.all { it == UByte.MIN_VALUE }
 
-fun UByteBigInt.predImpl(): UByteBigInt {
-    if (this.isZeroImpl()) {
-        throw NoSuchElementException("called pred on zero!")
-    }
+fun UByteBigInt.predImpl(): UByteBigInt =
+    (!isZeroImpl())
+        .guard {
+            val copyBytes = bytes.toMutableList()
+            for (i in copyBytes.indices) {
+                val (b, carry) = decWithCarry(copyBytes[i])
+                copyBytes[i] = b
 
-    val copyBytes = this.bytes.toMutableList()
-    for (i in copyBytes.indices) {
-        val (b, carry) = decWithCarry(copyBytes[i])
-        copyBytes[i] = b
-
-        if (!carry) {
-            break
-        }
-    }
-    return UByteBigInt(copyBytes)
-}
+                if (!carry) { break }
+            }
+            UByteBigInt(copyBytes)
+        }.unwrapOr { throw NoSuchElementException("called pred on zero!") }
 
 sealed class UnaryRepr {
     data object Zero : UnaryRepr()

@@ -47,15 +47,9 @@ val lcExpressionScope = LcExpScope<LcExpression, String> (
     varExpr = { LcExpression.Var(it) },
     lambdaExpr = { boundIdent, body -> LcExpression.Lambda(boundIdent, body) },
     appExpr = { rator, rand -> LcExpression.Application(rator, rand) },
-    asVarExpr = {
-        if (it is LcExpression.Var) { some { it.ident } } else { none() }
-    },
-    asLambdaExpr = {
-        if (it is LcExpression.Lambda) { some { LambdaExpr(it.boundVarIdent, it.body) } } else { none() }
-    },
-    asAppExpr = {
-        if (it is LcExpression.Application) { some {ApplicationExpr(it.rator, it.rand)} } else { none() }
-    }
+    asVarExpr = { it.tryCast<LcExpression.Var>().map { v -> v.ident } },
+    asLambdaExpr = { it.tryCast<LcExpression.Lambda>().map { l -> LambdaExpr(l.boundVarIdent, l.body) } },
+    asAppExpr = { it.tryCast<LcExpression.Application>().map { a -> ApplicationExpr(a.rator, a.rand) } }
 )
 
 fun ex2_15() {

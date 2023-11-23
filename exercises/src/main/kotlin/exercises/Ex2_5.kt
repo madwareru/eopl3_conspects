@@ -56,7 +56,25 @@ sealed class RibCageEnvExp<TKey, TVal> {
     data class Extend<TKey, TVal>(
         val bindings: Array<Pair<TKey, TVal>>,
         val rest: RibCageEnvExp<TKey, TVal>
-    ) : RibCageEnvExp<TKey, TVal>()
+    ) : RibCageEnvExp<TKey, TVal>() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as Extend<*, *>
+
+            if (!bindings.contentEquals(other.bindings)) return false
+            if (rest != other.rest) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = bindings.contentHashCode()
+            result = 31 * result + rest.hashCode()
+            return result
+        }
+    }
 }
 
 fun <TKey, TValue, TOut> RibCageEnvExp<TKey, TValue>.applyImpl(k: TKey, action: (TValue) -> TOut): TOut {
@@ -74,7 +92,7 @@ fun <TKey, TValue, TOut> RibCageEnvExp<TKey, TValue>.applyImpl(k: TKey, action: 
 fun <TKey, TValue> RibCageEnvExp<TKey, TValue>.hasBindingImpl(k: TKey): Boolean =
     when (this) {
         is RibCageEnvExp.Empty -> false
-        is RibCageEnvExp.Extend -> !bindings.firstOrNone { it.first == k }.isNone
+        is RibCageEnvExp.Extend -> bindings.firstOrNone { it.first == k } is Option.Some
     }
 
 val ribCageEnvScope = EnvScope<RibCageEnvExp<String, Int>, String, Int>(
@@ -92,14 +110,14 @@ fun <TKey, TVal> Option<(TKey) -> Option<TVal>>.extendEnv(savedVar: TKey, savedV
 
 val proceduralEnvScope = EnvScope<Option<(String) -> Option<Int>>, String, Int>(
     emptyEnv = { makeEmptyEnv() },
-    isEmpty = { it.isNone },
+    isEmpty = { it is Option.None },
     extendEnv = { env, k, v -> some { env.extendEnv(k, v) } },
     extendEnvMany = { env, pairs ->
         pairs
             .reversed()
             .fold(env) { e, binding -> some { e.extendEnv(binding.first, binding.second) } }
     },
-    hasBinding = { env, k -> !env.map { it(k) }.isNone },
+    hasBinding = { env, k -> env.map { it(k) } is Option.Some },
     applyEnv = { env, k, action -> env
         .flatMap { it(k) }
         .map (action)
