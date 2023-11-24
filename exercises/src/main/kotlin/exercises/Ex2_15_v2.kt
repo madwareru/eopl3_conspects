@@ -26,7 +26,7 @@ interface LcExpADT<TImpl, TVar> {
         )
 }
 
-val lcExpressionADT = object : LcExpADT<LcExpression, String> {
+object LcExpressionADT : LcExpADT<LcExpression, String> {
     // variable constructor
     // !this => this
     override operator fun String.not(): LcExpression =
@@ -75,7 +75,7 @@ fun ex2_15_v2() {
     }
 
     arrayOf(
-        "data structure repr" to testScope { lcExpressionADT },
+        "data structure repr" to testScope { LcExpressionADT },
     ).forEach {
         val (label, testScope) = it
         println("testing $label:")

@@ -23,14 +23,14 @@ interface NatNumberADT<TImpl> {
         }
 }
 
-val bigIntNatNumberADT = object : NatNumberADT<UByteBigInt> {
+ object BigIntNatNumberADT : NatNumberADT<UByteBigInt> {
     override fun zero(): UByteBigInt = makeZeroBigNum()
     override fun UByteBigInt.isZero(): Boolean = isZeroImpl()
     override fun UByteBigInt.pred(): UByteBigInt = predImpl()
     override fun UByteBigInt.succ(): UByteBigInt = succImpl()
 }
 
-val unaryNatNumberADT = object : NatNumberADT<UnaryRepr> {
+object UnaryNatNumberADT : NatNumberADT<UnaryRepr> {
     override fun zero() = UnaryRepr.Zero
     override fun UnaryRepr.isZero() = this is UnaryRepr.Zero
     override fun UnaryRepr.pred(): UnaryRepr = this
@@ -40,7 +40,7 @@ val unaryNatNumberADT = object : NatNumberADT<UnaryRepr> {
     override fun UnaryRepr.succ(): UnaryRepr = UnaryRepr.Succ(this)
 }
 
-val intNatNumberADT = object : NatNumberADT<Int> {
+object IntNatNumberADT : NatNumberADT<Int> {
     override fun zero(): Int = 0
     override fun Int.isZero(): Boolean = this == 0
     override fun Int.pred(): Int = (this > 0)
@@ -49,7 +49,7 @@ val intNatNumberADT = object : NatNumberADT<Int> {
     override fun Int.succ(): Int = this + 1
 }
 
-val listNatNumberADT = object : NatNumberADT<List<Boolean>> {
+object ListNatNumberADT : NatNumberADT<List<Boolean>> {
     override fun zero(): List<Boolean> = listOf()
     override fun List<Boolean>.isZero(): Boolean = isEmpty()
     override fun List<Boolean>.pred(): List<Boolean> = isNotEmpty()
@@ -60,7 +60,6 @@ val listNatNumberADT = object : NatNumberADT<List<Boolean>> {
         }.unwrapOr {
             throw NoSuchElementException("called pred on zero!")
         }
-    
     override fun List<Boolean>.succ(): List<Boolean> {
         val copy = toMutableList()
         copy.add(true)
@@ -71,7 +70,9 @@ val listNatNumberADT = object : NatNumberADT<List<Boolean>> {
 fun ex2_1_v2() {
     fun<T> testScope(scope: () -> NatNumberADT<T>): () -> Unit = {
         with(scope()) {
-            fun factorial(x: T): T = if (x.isZero() || x.pred().isZero()) { x } else { x * factorial(x.pred()) }
+            fun factorial(x: T): T = (x.isZero() || x.pred().isZero())
+                .guard { x }
+                .unwrapOr { x * factorial(x.pred()) }
 
             val x = zero(); println("${x.toInt()} is zero: ${x.isZero()}")
             val y = x.succ(); println("${y.toInt()} is zero: ${y.isZero()}")
@@ -83,17 +84,17 @@ fun ex2_1_v2() {
 
             val f0 = factorial(w); println("fact(${w.toInt()}) = ${f0.toInt()}")
 
-            val six = (c * w).pred().pred()
+            val six = c.pred().pred().pred().pred().pred().pred()
 
             val f = factorial(six); println("fact(${six.toInt()}) = ${f.toInt()}")
         }
     }
 
     arrayOf(
-        "unary repr" to testScope { unaryNatNumberADT },
-        "list repr" to testScope { listNatNumberADT },
-        "int repr" to testScope { intNatNumberADT },
-        "big int repr" to testScope { bigIntNatNumberADT },
+        "unary repr" to testScope { UnaryNatNumberADT },
+        "list repr" to testScope { ListNatNumberADT },
+        "int repr" to testScope { IntNatNumberADT },
+        "big int repr" to testScope { BigIntNatNumberADT },
     ).forEach {
         val (label, testScope) = it
         println("testing $label:")

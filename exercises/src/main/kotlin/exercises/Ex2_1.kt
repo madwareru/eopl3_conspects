@@ -51,8 +51,8 @@ fun decWithCarry(b: UByte): Pair<UByte, Boolean> =
 
 fun UByteBigInt.isZeroImpl(): Boolean = bytes.all { it == UByte.MIN_VALUE }
 
-fun UByteBigInt.predImpl(): UByteBigInt =
-    (!isZeroImpl())
+fun UByteBigInt.predImpl(): UByteBigInt {
+    return (!isZeroImpl())
         .guard {
             val copyBytes = bytes.toMutableList()
             for (i in copyBytes.indices) {
@@ -62,7 +62,9 @@ fun UByteBigInt.predImpl(): UByteBigInt =
                 if (!carry) { break }
             }
             UByteBigInt(copyBytes)
-        }.unwrapOr { throw NoSuchElementException("called pred on zero!") }
+        }
+        .unwrapOr { throw NoSuchElementException("called pred on zero!") }
+}
 
 sealed class UnaryRepr {
     data object Zero : UnaryRepr()

@@ -9,7 +9,7 @@ interface EnvironmentADT<TImpl, TKey, TVal> {
     fun <TOut> TImpl.apply(key: TKey, action: (TVal) -> TOut): TOut
 }
 
-val pairEnvADT = object : EnvironmentADT<PairEnvExp<String, Int>, String, Int> {
+object PairEnvADT : EnvironmentADT<PairEnvExp<String, Int>, String, Int> {
     override fun empty(): PairEnvExp<String, Int> = PairEnvExp.Empty()
 
     override fun <TOut> PairEnvExp<String, Int>.apply(key: String, action: (Int) -> TOut): TOut =
@@ -26,7 +26,7 @@ val pairEnvADT = object : EnvironmentADT<PairEnvExp<String, Int>, String, Int> {
     override fun PairEnvExp<String, Int>.isEmpty(): Boolean = this is PairEnvExp.Empty
 }
 
-val ribCageEnvADT = object : EnvironmentADT<RibCageEnvExp<String, Int>, String, Int> {
+object RibCageEnvADT : EnvironmentADT<RibCageEnvExp<String, Int>, String, Int> {
     override fun empty(): RibCageEnvExp<String, Int> = RibCageEnvExp.Empty()
     override fun <TOut> RibCageEnvExp<String, Int>.apply(key: String, action: (Int) -> TOut): TOut =
         applyImpl(key, action)
@@ -42,7 +42,7 @@ val ribCageEnvADT = object : EnvironmentADT<RibCageEnvExp<String, Int>, String, 
     override fun RibCageEnvExp<String, Int>.isEmpty(): Boolean = this is RibCageEnvExp.Empty
 }
 
-val proceduralEnvADT = object : EnvironmentADT<Option<(String) -> Option<Int>>, String, Int> {
+object ProceduralEnvADT : EnvironmentADT<Option<(String) -> Option<Int>>, String, Int> {
     override fun empty(): Option<(String) -> Option<Int>> = makeEmptyEnv()
 
     override fun <TOut> Option<(String) -> Option<Int>>.apply(key: String, action: (Int) -> TOut): TOut =
@@ -92,9 +92,9 @@ fun ex2_5_v2() {
     }
 
     arrayOf(
-        "pair repr" to testScope { pairEnvADT },
-        "rib cage repr" to testScope { ribCageEnvADT },
-        "procedural repr" to testScope { proceduralEnvADT }
+        "pair repr" to testScope { PairEnvADT },
+        "rib cage repr" to testScope { RibCageEnvADT },
+        "procedural repr" to testScope { ProceduralEnvADT }
     ).forEach {
         val (label, testScope) = it
         println("testing $label:")
