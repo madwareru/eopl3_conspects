@@ -37,10 +37,30 @@ data class LcExpScope<TLcExp, TVar> (
         )
 }
 
-sealed class LcExpression {
-    data class Var(val ident: String): LcExpression()
-    data class Lambda(val boundVarIdent: String, val body: LcExpression): LcExpression()
-    data class Application(val rator: LcExpression, val rand: LcExpression): LcExpression()
+sealed class LcExpression: LcExpr<String> {
+    data class Var(val ident: String): LcExpression() {
+        override fun <TOut> match(
+            caseVar: (String) -> TOut,
+            caseLambda: (LambdaExpr<LcExpr<String>, String>) -> TOut,
+            caseApplication: (ApplicationExpr<LcExpr<String>>) -> TOut
+        ) = caseVar(this.ident)
+    }
+
+    data class Lambda(val boundVarIdent: String, val body: LcExpression): LcExpression() {
+        override fun <TOut> match(
+            caseVar: (String) -> TOut,
+            caseLambda: (LambdaExpr<LcExpr<String>, String>) -> TOut,
+            caseApplication: (ApplicationExpr<LcExpr<String>>) -> TOut
+        ) = caseLambda(LambdaExpr(this.boundVarIdent, this.body))
+    }
+
+    data class Application(val rator: LcExpression, val rand: LcExpression): LcExpression() {
+        override fun <TOut> match(
+            caseVar: (String) -> TOut,
+            caseLambda: (LambdaExpr<LcExpr<String>, String>) -> TOut,
+            caseApplication: (ApplicationExpr<LcExpr<String>>) -> TOut
+        ) = caseApplication(ApplicationExpr(this.rator, this.rand))
+    }
 }
 
 val lcExpressionScope = LcExpScope<LcExpression, String> (

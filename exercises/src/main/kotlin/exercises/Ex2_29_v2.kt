@@ -8,18 +8,31 @@ import com.github.h0tk3y.betterParse.lexer.literalToken
 import com.github.h0tk3y.betterParse.lexer.regexToken
 import com.github.h0tk3y.betterParse.parser.Parser
 
+private fun List<SExpr>.toSList() =
+    indices
+        .reversed()
+        .fold(SExpr.List.Empty as SExpr.List) { acc, i -> acc.pushFront(this[i]) }
+
+
 object SExprGrammar : Grammar<SExpr>() {
-    private val lParen by literalToken("(")
-    private val rParen by literalToken(")")
+    // scanning
     @Suppress("unused")
     private val _ws by regexToken("\\s+", ignore = true)
+
+    private val lParen by literalToken("(")
+    private val rParen by literalToken(")")
     private val id by regexToken("([:_]|\\w)([:_\\-!?]|\\w)*")
-    private val term: Parser<SExpr> by
-    (id use { SExpr.Identifier(text) }) or
-            ((-lParen * oneOrMore(parser(this::term)) * -rParen)
-                    map { it.indices.reversed().fold(SExpr.List.Empty as SExpr.List) { acc, i -> acc.pushFront(it[i]) } }
-                    )
-    override val rootParser by term
+
+    // parsing
+    private val parseIdentifier = id
+        .use { SExpr.Identifier(text) }
+
+    private val parseList = (-lParen * zeroOrMore(parser { sExprValue }) * -rParen)
+        .use { toSList() }
+
+    private val sExprValue: Parser<SExpr> by parseIdentifier or parseList
+
+    override val rootParser by sExprValue
 }
 
 fun ex2_29_v2() {
@@ -42,7 +55,5 @@ fun ex2_29_v2() {
         "( lambda ( x ) ( lambda ( y ) ( ( lambda ( x ) ( x y ) ) x ) ) )"
     )
 
-    for (source in sources) {
-        testSExpr(source)
-    }
+    for (source in sources) testSExpr(source)
 }

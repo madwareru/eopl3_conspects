@@ -255,7 +255,5 @@ fun ex2_29() {
         "( lambda ( x ) ( lambda ( y ) ( ( lambda ( x ) ( x y ) ) x ) ) )"
     )
 
-    for (source in sources) {
-        testSExpr(source)
-    }
+    for (source in sources) testSExpr(source)
 }
