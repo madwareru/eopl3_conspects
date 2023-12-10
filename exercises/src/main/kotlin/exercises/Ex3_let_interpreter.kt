@@ -82,6 +82,7 @@ sealed class LetError<TVar> {
     data class UnsupportedComparisonOperator<TVar>(val op: BinaryOperator): LetError<TVar>()
     data class UnsupportedOperator<TVar>(val op: BinaryOperator): LetError<TVar>()
     class NoSuitableCondMatchFound<TVar> : LetError<TVar>()
+    class FailedToUnpackList<TVar> : LetError<TVar>()
 }
 
 interface LetEnv<TVar, TEnv: LetEnv<TVar, TEnv>> {
@@ -530,6 +531,14 @@ sealed class LetEnvBindingList<TVar> {
     ) : LetEnvBindingList<TVar>()
 }
 
+sealed class LetUnpackList<TVar> {
+    class None<TVar> : LetUnpackList<TVar>()
+    data class Nested<TVar>(
+        val headBinding: TVar,
+        val rest: LetUnpackList<TVar>
+    ) : LetUnpackList<TVar>()
+}
+
 sealed class LetCondMatchList<TVar> {
     /*
      +---------------------------------------------------------------------------------------------------------------+
@@ -692,6 +701,23 @@ sealed class LetExpression<TVar> {
         val bindings: LetEnvBindingList<TVar>,
         val expr: LetExpression<TVar>
     ) : LetExpression<TVar>()
+
+    /*
+     +---------------------------------------------------------------------------------------------------------------+
+     |                                         *** eval(env) calculation ***                                         |
+     +===============================================================================================================+
+     |                                                                                                               |
+     |                                          env' = bindings.eval(env) ?!                                         |
+     |                                        --------------------------------                                       |
+     |                                               expr.eval(env')                                                 |
+     |                                                                                                               |
+     +---------------------------------------------------------------------------------------------------------------+
+     */
+    data class Unpack<TVar>(
+        val bindings: LetUnpackList<TVar>,
+        val unpackedExpr: LetExpression<TVar>,
+        val expr: LetExpression<TVar>
+    ) : LetExpression<TVar>()
 }
 
 fun <TVar, TEnv: LetEnv<TVar, TEnv>> LetEnvBindingList<TVar>.eval(env: TEnv): Result<TEnv, LetError<TVar>> =
@@ -700,6 +726,16 @@ fun <TVar, TEnv: LetEnv<TVar, TEnv>> LetEnvBindingList<TVar>.eval(env: TEnv): Re
         is LetEnvBindingList.Nested -> rest.eval(env).flatMap { newEnv ->
             headBinding.second.eval(env).flatMap { v -> ok { newEnv.append(headBinding.first to v) } }
         }
+    }
+
+fun <TVar, TEnv: LetEnv<TVar, TEnv>> LetUnpackList<TVar>.eval(value: LetValue, env: TEnv): Result<TEnv, LetError<TVar>> =
+    when {
+        this is LetUnpackList.None && value is LetValue.List.Empty -> ok { env }
+        this is LetUnpackList.Nested && value is LetValue.List.Cons ->
+            rest
+                .eval(value.tail, env)
+                .map { newEnv -> newEnv.append(headBinding to value.head) }
+        else -> err { LetError.FailedToUnpackList() }
     }
 
 fun <TVar, TEnv: LetEnv<TVar, TEnv>> LetCondMatchList<TVar>.eval(env: TEnv): Result<LetValue, LetError<TVar>> =
@@ -881,7 +917,11 @@ fun <TVar, TEnv: LetEnv<TVar, TEnv>> LetExpression<TVar>.eval(env: TEnv): Result
         is LetExpression.Let -> {
             bindings.eval(env).flatMap { newEnv -> expr.eval(newEnv) }
         }
-
+        is LetExpression.Unpack -> {
+            unpackedExpr.eval(env).flatMap { ue ->
+                bindings.eval(ue, env).flatMap { newEnv -> expr.eval(newEnv) }
+            }
+        }
         is LetExpression.Var ->
             env.get(boundName).okOr { err { LetError.VarNotFound(boundName) } }
     }
@@ -896,6 +936,7 @@ object StringLetProgramGrammar : Grammar<LetProgram<String>>() {
     private val _ws by regexToken("\\s+", ignore = true)
 
     private val letKw by literalToken("let")
+    private val unpackKw by literalToken("unpack")
     private val inKw by literalToken("in")
     private val ifKw by literalToken("if")
     private val condKw by literalToken("cond")
@@ -993,6 +1034,26 @@ object StringLetProgramGrammar : Grammar<LetProgram<String>>() {
             )
         }
 
+    private val parseUnpackExpr: Parser<LetExpression<String>> by
+    (
+            -unpackKw *
+            -lSqParen *
+            id *
+            oneOrMore(-comma * id) *
+            -rSqParen *
+            -eqSign *
+            parser { parseExpr } *
+            -inKw *
+            parser { parseExpr }
+    ).use {
+        val bindings = LetUnpackList.Nested(t1.text,
+            t2.reversed().fold(LetUnpackList.None<String>() as LetUnpackList<String>) { acc, next ->
+                LetUnpackList.Nested(next.text, acc)
+            }
+        )
+        LetExpression.Unpack(bindings, t3, t4)
+    }
+
     private val parseLetExpr: Parser<LetExpression<String>> by
         (
             -letKw *
@@ -1069,6 +1130,7 @@ object StringLetProgramGrammar : Grammar<LetProgram<String>>() {
         parseTrueLiteralExpr or
         parseFalseLiteralExpr or
         parseLetExpr or
+        parseUnpackExpr or
         parseBinaryExpr or
         parseUnaryExpr or
         parseListLiteral or
@@ -1152,9 +1214,17 @@ fun ex3_let_interpreter() {
     )
     test(
         """
-            let [l1 = print!([1, 2, 3]), l2 = print!([4, 5])] in
-            let [l = print!(concat(l1, l2))] in
-            print!([eq?(length(l), 3), eq?(length(l1), 3), eq?(length(l2), 3), eq?(l, [1, 2, 3, 4, 5])])
+            zero?(
+                unpack [z, x] = [2, 3] in 
+                let [y = -(x, 1)] in
+                let [x = 4] in -(z, -(x, y)))
+        """.trimIndent()
+    )
+    test(
+        """
+            unpack [l1, l2] = [ print!([1, 2, 3]), print!([4, 5])] 
+                in let [ l = print!(concat(l1, l2)) ] 
+                    in print!( [ eq?(length(l), 3), eq?(length(l1), 3), eq?(length(l2), 3), eq?(l, [1, 2, 3, 4, 5])] )
         """.trimIndent()
     )
     test(
