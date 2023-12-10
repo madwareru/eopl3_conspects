@@ -21,7 +21,7 @@ object SExprGrammar : Grammar<SExpr>() {
 
     private val lParen by literalToken("(")
     private val rParen by literalToken(")")
-    private val id by regexToken("([:_]|\\w)([:_\\-!?]|\\w)*")
+    private val id by regexToken("([:_]|[a-zA-Z])([a-zA-Z]|[0-9]|[:_\\-!?])*")
 
     // parsing
     private val parseIdentifier = id

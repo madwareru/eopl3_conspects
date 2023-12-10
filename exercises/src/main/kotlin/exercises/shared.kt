@@ -20,6 +20,11 @@ inline fun<T> Option<T>.unwrapOr(default: () -> T) =
         else -> default()
     }
 
+inline fun<T> Option<T>.or(alternative: () -> Option<T>): Option<T> = when (this) {
+    is Option.Some -> this
+    else -> alternative()
+}
+
 inline fun<T, TErrorCause> Option<T>.okOr(alternative: () -> Result<T, TErrorCause>): Result<T, TErrorCause> =
     map { ok<T, TErrorCause> { it } }
         .unwrapOr { alternative() }
