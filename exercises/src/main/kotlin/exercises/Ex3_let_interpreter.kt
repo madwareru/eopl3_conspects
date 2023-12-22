@@ -21,19 +21,18 @@ sealed class LetValue {
     }
 }
 
+tailrec fun<T> LetValue.List.fold(init: T, reducer: (T, LetValue) -> T): T = when (this) {
+    LetValue.List.Empty -> init
+    is LetValue.List.Cons -> {
+        val v = reducer(init, head)
+        tail.fold(v, reducer)
+    }
+}
+
 fun LetValue.printed(): String = when (this) {
     is LetValue.Boolean -> if (value) "#t" else "#f"
     is LetValue.Number -> value.toString()
-    is LetValue.List.Cons -> {
-        var s = "[ ${head.printed()}"
-        var rest = tail
-        while (rest is LetValue.List.Cons) {
-            s += ", ${rest.head.printed()}"
-            rest = rest.tail
-        }
-        s += " ]"
-        s
-    }
+    is LetValue.List.Cons -> "[ ${head.printed()}${tail.fold("") { acc, next -> acc + ", ${next.printed()}" }} ]"
     LetValue.List.Empty -> "[ ]"
 }
 
@@ -531,6 +530,21 @@ sealed class LetEnvBindingList<TVar> {
     ) : LetEnvBindingList<TVar>()
 }
 
+/*
+     +---------------------------------------------------------------------------------------------------------------+
+     |                               *** eval(value: LetValue, env: LetEnv) calculation ***                          |
+     +===============================================================================================================+
+     |                                                                                                               |
+     |                        None = this                                    Nested(n, ns) = this                    |
+     | ---------------------------------------------------  -------------------------------------------------------- |
+     |   value is List.Empty     value !is List.Empty         List.Cons(x, xs) = value        value !is List.Cons    |
+     |  --------------------- ---------------------------   ----------------------------  -------------------------- |
+     |           Ok(env)       Err(Failed to unpack list)    env' = ns.eval(xs, env) !?   Err(Failed to unpack list) |
+     |                                                      ----------------------------                             |
+     |                                                       Ok(env'.append(n to x))                                 |
+     |                                                                                                               |
+     +---------------------------------------------------------------------------------------------------------------+
+*/
 sealed class LetUnpackList<TVar> {
     class None<TVar> : LetUnpackList<TVar>()
     data class Nested<TVar>(
@@ -636,7 +650,7 @@ sealed class LetExpression<TVar> {
      |                                         -----------------------------                                         |
      |                                               value.print()                                                   |
      |                                            -------------------                                                |
-     |                                                   Ok(1)                                                       |
+     |                                                 Ok(value)                                                     |
      |                                                                                                               |
      +---------------------------------------------------------------------------------------------------------------+
      */
@@ -707,8 +721,10 @@ sealed class LetExpression<TVar> {
      |                                         *** eval(env) calculation ***                                         |
      +===============================================================================================================+
      |                                                                                                               |
-     |                                          env' = bindings.eval(env) ?!                                         |
-     |                                        --------------------------------                                       |
+     |                                      unpacked = unpackedExpr.eval(env) ?!                                     |
+     |                                    ----------------------------------------                                   |
+     |                                     env' = bindings.eval(unpacked, env) ?!                                    |
+     |                                    ----------------------------------------                                   |
      |                                               expr.eval(env')                                                 |
      |                                                                                                               |
      +---------------------------------------------------------------------------------------------------------------+

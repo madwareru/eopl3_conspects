@@ -11,7 +11,8 @@ val exerciseLookup = hashMapOf(
     "2.15 v2" to ::ex2_15_v2,
     "2.29" to ::ex2_29,
     "2.29 v2" to ::ex2_29_v2,
-    "3.let" to ::ex3_let_interpreter
+    "3.let" to ::ex3_let_interpreter,
+    "3.let proc" to ::ex3_let_proc_interpreter
 )
 
 fun main() {

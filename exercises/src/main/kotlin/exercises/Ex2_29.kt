@@ -9,14 +9,6 @@ sealed class SExpr {
             fun <T> toList(mapping: (SExpr) -> T): kotlin.collections.List<T> =
                 fold(mutableListOf()) { a, n -> a.add(mapping(n)); a }
         }
-
-        fun <T> fold(init: T, step: (T, SExpr) -> T): T = when (this) {
-            Empty -> init
-            is Pair -> {
-                val v = step(init, head)
-                tail.fold(v, step)
-            }
-        }
         fun pushFront(value: SExpr): List = Pair(value, this)
 
         companion object {
@@ -161,6 +153,14 @@ sealed class SExpr {
         }
         fun lambda(boundVars: List, body: SExpr): List = List.of(Identifier("lambda"), boundVars, body)
         fun apply(rator: SExpr, rands: List) = List.Pair(rator, rands)
+    }
+}
+
+tailrec fun <T> SExpr.List.fold(init: T, step: (T, SExpr) -> T): T = when (this) {
+    SExpr.List.Empty -> init
+    is SExpr.List.Pair -> {
+        val v = step(init, head)
+        tail.fold(v, step)
     }
 }
 

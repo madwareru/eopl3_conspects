@@ -43,6 +43,11 @@ inline fun <T> Array<out T>.firstOrNone(predicate: (T) -> Boolean): Option<T> {
     return exercises.none()
 }
 
+inline fun <T> List<T>.firstOrNone(predicate: (T) -> Boolean): Option<T> {
+    for (element in this) if (predicate(element)) return some { element }
+    return exercises.none()
+}
+
 sealed class Result<out T, out TErrorReason> {
     data class Ok<out T, out TErrorReason>(val value: T) : Result<T, TErrorReason>()
     data class Err<out T, out TErrorReason>(val reason: TErrorReason) : Result<T, TErrorReason>()
