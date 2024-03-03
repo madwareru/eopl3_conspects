@@ -51,7 +51,42 @@ fun <TVar> LetProcValue<TVar>.structuralEq(other: LetProcValue<TVar>): Result<Le
 
 fun <TVar> LetProcValue.Proc.Intrinsic<TVar>.eval(bindings: List<LetProcValue<TVar>>) = when {
     arguments.size == bindings.size -> body(arguments.zip(bindings).fold(env) { newEnv, next -> newEnv.append(next) })
-    else -> err { LetProcError.WrongArgumentCount(arguments.size, bindings.size) }
+    arguments.size < bindings.size -> {
+        val partialBindings = mutableListOf<LetProcValue<TVar>>()
+        val restBindings = mutableListOf<LetProcExpression<TVar>>()
+        for (i in bindings.indices) {
+            when {
+                i < arguments.size -> partialBindings.add(bindings[i])
+                else -> restBindings.add(LetProcExpression.Value(bindings[i]))
+            }
+        }
+        val newEnv = arguments.zip(partialBindings).fold(env) { newEnv, next -> newEnv.append(next) }
+        body(newEnv).flatMap { LetProcExpression.Call(LetProcExpression.Value(it), restBindings).eval(newEnv) }
+    }
+    else -> {
+        val partialArguments = mutableListOf<TVar>()
+        val restArguments = mutableListOf<TVar>()
+        for (i in arguments.indices) {
+            when {
+                i < bindings.size -> partialArguments.add(arguments[i])
+                else -> restArguments.add(arguments[i])
+            }
+        }
+        val newEnv = partialArguments.zip(bindings).fold(env) { newEnv, next -> newEnv.append(next) }
+        ok { LetProcValue.Proc.Intrinsic(restArguments, newEnv) { nestedEnv ->
+            val fullBindings = mutableListOf<LetProcExpression<TVar>>()
+            for (b in bindings) fullBindings.add(LetProcExpression.Value(b))
+
+            for (arg in restArguments) {
+                when (val b = nestedEnv.get(arg)) {
+                    is Option.None -> return@Intrinsic err { LetProcError.NotFound(arg) }
+                    is Option.Some -> fullBindings.add(LetProcExpression.Value(b.value))
+                }
+            }
+
+            LetProcExpression.Call(LetProcExpression.Value(this), fullBindings).eval(nestedEnv)
+        } }
+    }
 }
 
 fun <TVar> LetProcValue.Proc.User<TVar>.eval(bindings: List<LetProcValue<TVar>>) = when {
@@ -59,14 +94,54 @@ fun <TVar> LetProcValue.Proc.User<TVar>.eval(bindings: List<LetProcValue<TVar>>)
         val newEnv = arguments.zip(bindings).fold(env) { newEnv, next -> newEnv.append(next) }
         body.eval( recursiveName.map { newEnv.append(it to this) }.unwrapOr { newEnv })
     }
-    else -> err { LetProcError.WrongArgumentCount(arguments.size, bindings.size) }
+    arguments.size < bindings.size -> {
+        val partialBindings = mutableListOf<LetProcValue<TVar>>()
+        val restBindings = mutableListOf<LetProcExpression<TVar>>()
+        for (i in bindings.indices) {
+            when {
+                i < arguments.size -> partialBindings.add(bindings[i])
+                else -> restBindings.add(LetProcExpression.Value(bindings[i]))
+            }
+        }
+        val newEnv = arguments.zip(partialBindings).fold(env) { newEnv, next -> newEnv.append(next) }
+        val newEnvEnsured = recursiveName.map { newEnv.append(it to this) }.unwrapOr { newEnv }
+        body.eval(newEnvEnsured)
+            .flatMap {
+                LetProcExpression.Call(LetProcExpression.Value(it), restBindings).eval(newEnvEnsured)
+            }
+    }
+    else -> {
+        val partialArguments = mutableListOf<TVar>()
+        val restArguments = mutableListOf<TVar>()
+        for (i in arguments.indices) {
+            when {
+                i < bindings.size -> partialArguments.add(arguments[i])
+                else -> restArguments.add(arguments[i])
+            }
+        }
+        val newEnv = partialArguments.zip(bindings).fold(env) { newEnv, next -> newEnv.append(next) }
+        val newEnvEnsured = recursiveName.map { newEnv.append(it to this) }.unwrapOr { newEnv }
+        ok { LetProcValue.Proc.Intrinsic(restArguments, newEnvEnsured) { nestedEnv ->
+            val fullBindings = mutableListOf<LetProcExpression<TVar>>()
+            for (b in bindings) fullBindings.add(LetProcExpression.Value(b))
+
+            for (arg in restArguments) {
+                when (val b = nestedEnv.get(arg)) {
+                    is Option.None -> return@Intrinsic err { LetProcError.NotFound(arg) }
+                    is Option.Some -> fullBindings.add(LetProcExpression.Value(b.value))
+                }
+            }
+
+            LetProcExpression.Call(LetProcExpression.Value(this), fullBindings).eval(nestedEnv)
+        } }
+    }
 }
 
 sealed class LetProcError<TVar> {
     data class NotFound<TVar>(val boundName: TVar) : LetProcError<TVar>()
-    data class WrongArgumentCount<TVar>(val argCountExpected: Int, val argCountActual: Int) : LetProcError<TVar>()
     data class CantCastToNumber<TVar>(val v: LetProcValue<TVar>) : LetProcError<TVar>()
     data class CantCastToBool<TVar>(val v: LetProcValue<TVar>) : LetProcError<TVar>()
+    data class CantCastToProc<TVar>(val v: LetProcValue<TVar>) : LetProcError<TVar>()
     data class CantBindValueToRecursive<TVar>(val v: LetProcValue<TVar>) : LetProcError<TVar>()
     data class CantCompareTypes<TVar>(val l: LetProcValue<TVar>, val r: LetProcValue<TVar>) : LetProcError<TVar>()
     data class CantCallOnNonProcValue<TVar>(val value: LetProcValue<TVar>) : LetProcError<TVar>()
@@ -245,11 +320,30 @@ fun makeEnvWithIntrinsics() = emptyEnv
             else -> ok { LetProcValue.from(!operand.value) }
         } }
     ).append(
+        "minus" to makeUnaryOp { operand -> when {
+            operand !is LetProcValue.Number -> err { LetProcError.CantCastToNumber(operand) }
+            else -> ok { LetProcValue.from(-operand.value) }
+        } }
+    ).append(
         "eq?" to makeBinOp { lhs, rhs -> lhs.structuralEq(rhs) }
     ).append(
         "print" to makeUnaryOp { operand ->
             println(operand.printed())
             ok { operand }
+        }
+    ).append(
+        "call-self" to LetProcValue.Proc.Intrinsic(listOf("__proc__"), emptyEnv) { env ->
+            env.get("__proc__")
+                .okOr { err { LetProcError.NotFound("__proc__") } }
+                .flatMap { proc ->
+                    when {
+                        proc !is LetProcValue.Proc -> err { LetProcError.CantCastToProc(proc) }
+                        else -> {
+                            val procExpr = LetProcExpression.Value(proc)
+                            LetProcExpression.Call(procExpr, listOf(procExpr)).eval(env)
+                        }
+                    }
+                }
         }
     )
 
@@ -387,10 +481,82 @@ fun ex3_let_proc_interpreter() {
         """.trimIndent()
     )
     test("""
+        let f = { x -> ( sub x 11 ) } in
+        ( f ( f 77) )
+        """.trimIndent() // returns 55
+    )
+    test("""
+        ( { f -> ( f ( f 77) ) } { x -> ( sub x 11 ) } )
+        """.trimIndent() // returns 55
+    )
+    test(
+        """
+        let make-mult = { maker -> 
+            { x -> 
+                if (eq? 0 x) 
+                    then 0
+                    else ( add ( ( call-self maker ) ( sub x 1 ) ) 4 )
+            } 
+        } in
+        let times4 = ( call-self make-mult ) in
+        (times4 3)
+        """.trimIndent() // returns 12
+    )
+    test(
+        """
         let one-or-less? = { n -> ( not ( greater? n 1 ) ) } in
         let pred = { n -> ( sub n 1 ) } in
-        let rec factorial = { n -> if ( one-or-less? n ) then n else ( mul n ( factorial ( pred n ) ) ) } in 
+        let factorial = (
+            call-self
+            { maker ->
+                { n -> 
+                    if ( one-or-less? n ) 
+                        then n else 
+                        ( mul n ( ( call-self maker ) ( pred n ) ) ) 
+                }
+            }
+        ) in
         ( print ( factorial 10 ) )
+        """.trimIndent() // prints 3628800
+    )
+    test("""
+        let one-or-less? = { n -> ( not ( greater? n 1 ) ) } in
+        let pred = { n -> ( sub n 1 ) } in
+        let rec factorial = { n -> 
+            if ( one-or-less? n ) 
+                then n 
+                else ( mul n ( factorial ( pred n ) ) ) 
+        } in 
+        ( print ( factorial 10 ) )
+        """.trimIndent() // prints 3628800
+    )
+    test(
+        """
+        let add-five = ( add 5 ) in
+        (add-five 20)
+        """.trimIndent()
+    )
+    test(
+        """
+        let add2 = ( add ) in
+        (add2 5 20)
+        """.trimIndent()
+    )
+    test(
+        """
+        let carried-add-three = { x -> { y -> { z -> (add ( add x y ) z ) } } } in
+        (carried-add-three 1 2 3)
+        """.trimIndent()
+    )
+    test(
+        """
+        let rec times = { x y -> 
+            if ( less? y 0 ) then ( times x ( minus y ) ) 
+            else if ( eq? y 0 ) then 0 
+            else ( add x ( times x ( sub y 1 ) ) ) 
+        } in
+        let times-three = ( times 3 ) in
+        ( times-three 5 )
         """.trimIndent()
     )
 }
