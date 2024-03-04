@@ -31,7 +31,8 @@ fn main() {
     let menu = make_menu![
         "2.1": chapter_2::exercise_1::ex_2_1,
         "2.5": chapter_2::exercise_5::ex_2_5,
-        "2.15": chapter_2::exercise_15::ex_2_15
+        "2.15": chapter_2::exercise_15::ex_2_15,
+        "2.29": chapter_2::exercise_29::ex_2_29
     ];
 
     let mut buffer = String::new();
