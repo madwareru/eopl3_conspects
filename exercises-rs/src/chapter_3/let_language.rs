@@ -71,11 +71,7 @@ impl LetList {
                     LetValue::Boolean(true) => tl.structural_eq(tr),
                     _ => unreachable!()
                 }
-            },
-            _ => Err(LetError::CantCompareTypes {
-                l: self.clone().into_let_value(),
-                r: other.clone().into_let_value()
-            })
+            }
         }
     }
 
