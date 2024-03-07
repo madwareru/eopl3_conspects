@@ -40,6 +40,8 @@ fun <TVar> LetValue.structuralEq(other: LetValue): Result<LetValue, LetError<TVa
     return when {
         this is LetValue.Number && other is LetValue.Number -> ok { LetValue.from(this.value == other.value) }
         this is LetValue.Boolean && other is LetValue.Boolean -> ok { LetValue.from(this.value == other.value) }
+        this is LetValue.List.Empty && other is LetValue.List.Cons -> ok { LetValue.from(false) }
+        this is LetValue.List.Cons && other is LetValue.List.Empty -> ok { LetValue.from(false) }
         this is LetValue.List.Empty && other is LetValue.List.Empty -> ok { LetValue.from(true) }
         this is LetValue.List.Cons && other is LetValue.List.Cons ->
             (this.head.structuralEq<TVar>(other.head)).flatMap {
@@ -47,7 +49,7 @@ fun <TVar> LetValue.structuralEq(other: LetValue): Result<LetValue, LetError<TVa
                     ok { it }
                 } else {
                     this.tail.structuralEq(other.tail)
-                } 
+                }
             }
         else -> err { LetError.CantCompareTypes(this, other) }
     }

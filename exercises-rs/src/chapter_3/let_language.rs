@@ -59,6 +59,8 @@ impl LetList {
 
     pub fn structural_eq<TVar>(&self, other: &Self) -> Result<LetValue, LetError<TVar>> {
         match (self.0.as_ref(), other.0.as_ref()) {
+            (LetListData::Cons { .. }, LetListData::Empty) => Ok(false.into_let_value()),
+            (LetListData::Empty, LetListData::Cons { .. }) => Ok(false.into_let_value()),
             (LetListData::Empty, LetListData::Empty) => Ok(true.into_let_value()),
             (
                 LetListData::Cons { head: hl, tail: tl },
