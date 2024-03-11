@@ -33,7 +33,8 @@ fn main() {
         "2.5": chapter_2::exercise_5::ex_2_5,
         "2.15": chapter_2::exercise_15::ex_2_15,
         "2.29": chapter_2::exercise_29::ex_2_29,
-        "3.let": chapter_3::let_language::ex_3_let
+        "3.let": chapter_3::let_language::ex_3_let,
+        "3.let proc": chapter_3::let_proc_language::ex_3_let_proc
     ];
 
     let mut buffer = String::new();

@@ -1,8 +1,9 @@
-use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use thiserror::Error;
+use crate::s_expr_ch3;
+use super::shared_s_expr::{SExpr, Parser};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LetListData {
@@ -24,8 +25,7 @@ impl Into<LetList> for Vec<LetValue> {
 
 impl IntoLetValue for Vec<LetValue> {
     fn into_let_value(self) -> LetValue {
-        let l: LetList = self.into();
-        l.into_let_value()
+        <Self as Into<LetList>>::into(self).into_let_value()
     }
 }
 
@@ -142,21 +142,35 @@ impl Display for LetValue {
 }
 
 impl LetValue {
-    pub fn match_type(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Number(_), Self::Number(_)) => true,
-            (Self::Boolean(_), Self::Boolean(_)) => true,
-            (Self::List(_), Self::List(_)) => true,
-            _ => false
-        }
-    }
-
     pub fn structural_eq<TVar>(&self, other: &Self) -> Result<LetValue, LetError<TVar>> {
         match (self, other) {
             (Self::Number(l), Self::Number(r)) => Ok((*l == *r).into_let_value()),
             (Self::Boolean(l), Self::Boolean(r)) => Ok((*l && *r).into_let_value()),
             (Self::List(l), Self::List(r)) => l.structural_eq(&r),
             _ => Err(LetError::CantCompareTypes { l: self.clone(), r: other.clone() })
+        }
+    }
+
+    pub fn as_s_expr(&self) -> SExpr {
+        match self{
+            LetValue::Number(n) => SExpr::number(*n),
+            LetValue::Boolean(b) => SExpr::boolean(*b),
+            LetValue::List(l) => {
+                match l.0.as_ref() {
+                    LetListData::Empty => s_expr_ch3!( ( make_list ) ),
+                    LetListData::Cons { .. } => {
+                        let v = l.fold(
+                            Vec::new(),
+                            | acc, next | {
+                                let mut acc = acc;
+                                acc.push(next.as_s_expr());
+                                acc
+                            }
+                        );
+                        SExpr::list(v)
+                    }
+                }
+            }
         }
     }
 }
@@ -252,15 +266,10 @@ impl<T> Env<T> for LetEnv<T> {
     }
 
     fn get<TRef: ?Sized>(&self, bound_name: &TRef) -> Option<&LetValue> where T: PartialEq<TRef> {
-        match self.0.as_ref() {
-            LetEnvData::Empty => None,
-            LetEnvData::Pair { bound_name: b_name, value, tail } => {
-                if b_name.eq(bound_name) {
-                    Some(value)
-                } else {
-                    tail.get(bound_name)
-                }
-            }
+        if let LetEnvData::Pair { bound_name: b_name, value, tail } = self.0.as_ref() {
+            if !b_name.eq(bound_name) { tail.get(bound_name) } else { Some( value ) }
+        } else {
+            None
         }
     }
 }
@@ -268,17 +277,17 @@ impl<T> Env<T> for LetEnv<T> {
 #[derive(Clone, Debug)]
 pub enum LetExpression<TRef: ?Sized, TVar: PartialEq<TRef> + AsRef<TRef>> {
     Unused(PhantomData<TRef>),
-    Constant(Box<LetValue>), // v
-    If { // v
+    Constant(Box<LetValue>),
+    If {
         condition: Box<LetExpression<TRef, TVar>>,
         then: Box<LetExpression<TRef, TVar>>,
         otherwise: Box<LetExpression<TRef, TVar>>
     },
-    Cond { // v
+    Cond {
         match_list: Vec<(LetExpression<TRef, TVar>, LetExpression<TRef, TVar>)>,
         else_match: Box<LetExpression<TRef, TVar>>
     },
-    Print(Box<LetExpression<TRef, TVar>>), // v
+    Print(Box<LetExpression<TRef, TVar>>),
     Binary {
         op: BinOp,
         l: Box<LetExpression<TRef, TVar>>,
@@ -288,67 +297,18 @@ pub enum LetExpression<TRef: ?Sized, TVar: PartialEq<TRef> + AsRef<TRef>> {
         op: UnOp,
         operand:  Box<LetExpression<TRef, TVar>>
     },
-    Var(TVar), // v
+    Var(TVar),
     Let {
         bindings: Vec<(TVar, LetExpression<TRef, TVar>)>,
         expr: Box<LetExpression<TRef, TVar>>
     },
-    Unpack { // v
+    Unpack {
         bindings: Vec<TVar>,
         unpacked_expr: Box<LetExpression<TRef, TVar>>,
         expr: Box<LetExpression<TRef, TVar>>
     },
-    MakeList (Vec<LetExpression<TRef, TVar>>) // v
+    MakeList (Vec<LetExpression<TRef, TVar>>)
 }
-
-pub trait Parser<TIn, TOut>
-{
-    type ErrorType: Error;
-    fn parse(input: &TIn) -> Result<TOut, Self::ErrorType>;
-    fn un_parse(input: &TOut) -> TIn;
-}
-
-#[derive(Clone, Debug)]
-pub enum SExpr {
-    Id(String),
-    Number(i32),
-    Bool(bool),
-    List(Vec<SExpr>)
-}
-
-impl SExpr {
-    fn id(data: String) -> Self { Self::Id(data) }
-
-    fn number(n: i32) -> Self { Self::Number(n) }
-
-    fn boolean(b: bool) -> Self { Self::Bool(b) }
-
-    fn list(elements: impl IntoIterator<Item=Self>) -> Self {
-        Self::List(elements.into_iter().collect())
-    }
-}
-
-impl Display for SExpr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SExpr::Id(id) => f.write_fmt(format_args!("{id}")),
-            SExpr::Number(n) => f.write_fmt(format_args!("{n}")),
-            SExpr::Bool(b) => f.write_fmt(format_args!("{b}")),
-            SExpr::List(l) => {
-                let nested = l.iter().map(|it| format!("{it}")).collect::<Vec<_>>().join(" ");
-                f.write_fmt(format_args!("( {nested} )"))
-            }
-        }
-    }
-}
-
-macro_rules! s_expr(
-    (false) => { SExpr::boolean( false ) };
-    (true) => { SExpr::boolean( true ) };
-    ($id: ident) => { SExpr::id( stringify!($id).to_string() ) };
-    ($n: literal) => { SExpr::number( $n ) };
-    (($($child_content:tt)+)) => { SExpr::list([$(s_expr![$child_content]),+]) }
-);
 
 impl<TRef: ?Sized, TVar: PartialEq<TRef> + AsRef<TRef> + Clone> LetExpression<TRef, TVar> {
     pub fn eval(&self, env: &impl Env<TVar>) -> Result<LetValue, LetError<TVar>> {
@@ -379,94 +339,97 @@ impl<TRef: ?Sized, TVar: PartialEq<TRef> + AsRef<TRef> + Clone> LetExpression<TR
             },
             LetExpression::Binary { op, l, r } =>{
                 let (l_res, r_res) = (l.eval(env)?, r.eval(env)?);
-                match (&l_res, &r_res) {
-                    (_, _) if *op == BinOp::Eq => l_res.structural_eq(&r_res),
-                    (LetValue::Number(ln), LetValue::Number(rn)) => {
-                        match op {
-                            BinOp::And => Err(LetError::CantCastToBool),
-                            BinOp::Or => Err(LetError::CantCastToBool),
-                            BinOp::Xor => Err(LetError::CantCastToBool),
-                            BinOp::Subtract => Ok((ln - rn).into_let_value()),
-                            BinOp::Cons => Err(LetError::CantCastToList),
-                            BinOp::Concat => Err(LetError::CantCastToList),
-                            BinOp::Add => Ok((ln + rn).into_let_value()),
-                            BinOp::Greater => Ok((ln > rn).into_let_value()),
-                            BinOp::Less => Ok((ln < rn).into_let_value()),
-                            BinOp::GreaterEq => Ok((ln >= rn).into_let_value()),
-                            BinOp::LessEq => Ok((ln <= rn).into_let_value()),
-                            BinOp::Multiply => Ok((ln * rn).into_let_value()),
-                            BinOp::Division => Ok((ln / rn).into_let_value()),
-                            BinOp::Reminder => Ok((ln % rn).into_let_value()),
-                            _ => unreachable!()
-                        }
-                    },
-                    (LetValue::Boolean(lb), LetValue::Boolean(rb)) => {
-                        match op {
-                            BinOp::And => Ok((*lb && *rb).into_let_value()),
-                            BinOp::Or => Ok((*lb || *rb).into_let_value()),
-                            BinOp::Xor => Ok((*lb ^ *rb).into_let_value()),
-                            BinOp::Subtract => Err(LetError::CantCastToNumber),
-                            BinOp::Cons => Err(LetError::CantCastToList),
-                            BinOp::Concat => Err(LetError::CantCastToList),
-                            BinOp::Add => Err(LetError::CantCastToNumber),
-                            BinOp::Greater => Err(LetError::CantCastToNumber),
-                            BinOp::Less => Err(LetError::CantCastToNumber),
-                            BinOp::GreaterEq => Err(LetError::CantCastToNumber),
-                            BinOp::LessEq => Err(LetError::CantCastToNumber),
-                            BinOp::Multiply => Err(LetError::CantCastToNumber),
-                            BinOp::Division => Err(LetError::CantCastToNumber),
-                            BinOp::Reminder => Err(LetError::CantCastToNumber),
-                            _ => unreachable!()
-                        }
-                    },
-                    (l, LetValue::List(rl)) => {
-                        match op {
-                            BinOp::And => Err(LetError::CantCastToBool),
-                            BinOp::Or => Err(LetError::CantCastToBool),
-                            BinOp::Xor => Err(LetError::CantCastToBool),
-                            BinOp::Subtract => Err(LetError::CantCastToNumber),
-                            BinOp::Cons => Ok(rl.cons(l.clone()).into_let_value()),
-                            BinOp::Concat => {
-                                if let LetValue::List(ll) = l {
-                                    Ok(ll.concat(&rl).into_let_value())
-                                } else {
-                                    Err(LetError::CantCarFromEmptyList)
-                                }
+                if *op == BinOp::Eq {
+                    l_res.structural_eq(&r_res)
+                } else {
+                    match (&l_res, &r_res) {
+                        (LetValue::Number(ln), LetValue::Number(rn)) => {
+                            match op {
+                                BinOp::And => Err(LetError::CantCastToBool),
+                                BinOp::Or => Err(LetError::CantCastToBool),
+                                BinOp::Xor => Err(LetError::CantCastToBool),
+                                BinOp::Subtract => Ok((ln - rn).into_let_value()),
+                                BinOp::Cons => Err(LetError::CantCastToList),
+                                BinOp::Concat => Err(LetError::CantCastToList),
+                                BinOp::Add => Ok((ln + rn).into_let_value()),
+                                BinOp::Greater => Ok((ln > rn).into_let_value()),
+                                BinOp::Less => Ok((ln < rn).into_let_value()),
+                                BinOp::GreaterEq => Ok((ln >= rn).into_let_value()),
+                                BinOp::LessEq => Ok((ln <= rn).into_let_value()),
+                                BinOp::Multiply => Ok((ln * rn).into_let_value()),
+                                BinOp::Division => Ok((ln / rn).into_let_value()),
+                                BinOp::Reminder => Ok((ln % rn).into_let_value()),
+                                _ => unreachable!()
                             }
-                            BinOp::Add => Err(LetError::CantCastToNumber),
-                            BinOp::Greater => Err(LetError::CantCastToNumber),
-                            BinOp::Less => Err(LetError::CantCastToNumber),
-                            BinOp::GreaterEq => Err(LetError::CantCastToNumber),
-                            BinOp::LessEq => Err(LetError::CantCastToNumber),
-                            BinOp::Multiply => Err(LetError::CantCastToNumber),
-                            BinOp::Division => Err(LetError::CantCastToNumber),
-                            BinOp::Reminder => Err(LetError::CantCastToNumber),
-                            _ => unreachable!()
-                        }
-                    },
-                    _ => {
-                        match op {
-                            BinOp::And |
-                            BinOp::Or |
-                            BinOp::Xor |
-                            BinOp::Subtract |
-                            BinOp::Cons |
-                            BinOp::Concat |
-                            BinOp::Add |
-                            BinOp::Greater |
-                            BinOp::Less |
-                            BinOp::GreaterEq |
-                            BinOp::LessEq |
-                            BinOp::Multiply |
-                            BinOp::Division |
-                            BinOp::Reminder => Err(
-                                LetError::UnsupportedOperator {
-                                    op: *op,
-                                    l: l_res,
-                                    r: r_res
+                        },
+                        (LetValue::Boolean(lb), LetValue::Boolean(rb)) => {
+                            match op {
+                                BinOp::And => Ok((*lb && *rb).into_let_value()),
+                                BinOp::Or => Ok((*lb || *rb).into_let_value()),
+                                BinOp::Xor => Ok((*lb ^ *rb).into_let_value()),
+                                BinOp::Subtract => Err(LetError::CantCastToNumber),
+                                BinOp::Cons => Err(LetError::CantCastToList),
+                                BinOp::Concat => Err(LetError::CantCastToList),
+                                BinOp::Add => Err(LetError::CantCastToNumber),
+                                BinOp::Greater => Err(LetError::CantCastToNumber),
+                                BinOp::Less => Err(LetError::CantCastToNumber),
+                                BinOp::GreaterEq => Err(LetError::CantCastToNumber),
+                                BinOp::LessEq => Err(LetError::CantCastToNumber),
+                                BinOp::Multiply => Err(LetError::CantCastToNumber),
+                                BinOp::Division => Err(LetError::CantCastToNumber),
+                                BinOp::Reminder => Err(LetError::CantCastToNumber),
+                                _ => unreachable!()
+                            }
+                        },
+                        (l, LetValue::List(rl)) => {
+                            match op {
+                                BinOp::And => Err(LetError::CantCastToBool),
+                                BinOp::Or => Err(LetError::CantCastToBool),
+                                BinOp::Xor => Err(LetError::CantCastToBool),
+                                BinOp::Subtract => Err(LetError::CantCastToNumber),
+                                BinOp::Cons => Ok(rl.cons(l.clone()).into_let_value()),
+                                BinOp::Concat => {
+                                    if let LetValue::List(ll) = l {
+                                        Ok(ll.concat(&rl).into_let_value())
+                                    } else {
+                                        Err(LetError::CantCarFromEmptyList)
+                                    }
                                 }
-                            ),
-                            _ => unreachable!()
+                                BinOp::Add => Err(LetError::CantCastToNumber),
+                                BinOp::Greater => Err(LetError::CantCastToNumber),
+                                BinOp::Less => Err(LetError::CantCastToNumber),
+                                BinOp::GreaterEq => Err(LetError::CantCastToNumber),
+                                BinOp::LessEq => Err(LetError::CantCastToNumber),
+                                BinOp::Multiply => Err(LetError::CantCastToNumber),
+                                BinOp::Division => Err(LetError::CantCastToNumber),
+                                BinOp::Reminder => Err(LetError::CantCastToNumber),
+                                _ => unreachable!()
+                            }
+                        },
+                        _ => {
+                            match op {
+                                BinOp::And |
+                                BinOp::Or |
+                                BinOp::Xor |
+                                BinOp::Subtract |
+                                BinOp::Cons |
+                                BinOp::Concat |
+                                BinOp::Add |
+                                BinOp::Greater |
+                                BinOp::Less |
+                                BinOp::GreaterEq |
+                                BinOp::LessEq |
+                                BinOp::Multiply |
+                                BinOp::Division |
+                                BinOp::Reminder => Err(
+                                    LetError::UnsupportedOperator {
+                                        op: *op,
+                                        l: l_res,
+                                        r: r_res
+                                    }
+                                ),
+                                _ => unreachable!()
+                            }
                         }
                     }
                 }
@@ -561,9 +524,9 @@ impl<TRef: ?Sized, TVar: PartialEq<TRef> + AsRef<TRef> + Clone> LetExpression<TR
                 }?;
                 expr.eval(&new_env)
             },
-            LetExpression::MakeList(exprs) => {
-                let mut values = Vec::new();
-                for expr in exprs {
+            LetExpression::MakeList(expressions) => {
+                let mut values = Vec::with_capacity(expressions.len());
+                for expr in expressions {
                     let r = expr.eval(env)?;
                     values.push(r);
                 }
@@ -767,88 +730,181 @@ impl Parser<SExpr, StrLetExpr> for StrLetParser {
         }
     }
 
-    fn un_parse(_input: &StrLetExpr) -> SExpr {
-        todo!()
+    fn un_parse(input: &StrLetExpr) -> SExpr {
+        match input {
+            StrLetExpr::Unused(_) => unreachable!(),
+            StrLetExpr::Constant(c) => c.as_s_expr(),
+            StrLetExpr::If { condition, then, otherwise } => SExpr::list([
+                SExpr::id("if"),
+                Self::un_parse(condition),
+                SExpr::id("then"),
+                Self::un_parse(then),
+                SExpr::id("else"),
+                Self::un_parse(otherwise)
+            ]),
+            StrLetExpr::Cond { match_list, else_match } => {
+                let mut v = vec![ SExpr::id("cond") ];
+                for (when, then) in match_list.iter() {
+                    v.extend_from_slice(&[
+                        SExpr::id("when"),
+                        Self::un_parse(when),
+                        SExpr::id("then"),
+                        Self::un_parse(then)
+                    ]);
+                }
+                v.extend_from_slice(&[
+                    SExpr::id("else"),
+                    Self::un_parse(else_match)
+                ]);
+                SExpr::list(v)
+            },
+            StrLetExpr::Print(e) => {
+                SExpr::list([
+                    SExpr::id("print"),
+                    Self::un_parse(e)
+                ])
+            },
+            StrLetExpr::Binary { op, l, r } => {
+                let op = match op {
+                    BinOp::Eq => "eq",
+                    BinOp::And => "and",
+                    BinOp::Or => "or",
+                    BinOp::Xor => "xor",
+                    BinOp::Subtract => "sub",
+                    BinOp::Cons => "cons",
+                    BinOp::Concat => "concat",
+                    BinOp::Add => "add",
+                    BinOp::Greater => "gt",
+                    BinOp::Less => "lt",
+                    BinOp::GreaterEq => "gt_eq",
+                    BinOp::LessEq => "lt_eq",
+                    BinOp::Multiply => "mul",
+                    BinOp::Division => "div",
+                    BinOp::Reminder => "rem",
+                };
+                SExpr::list([ SExpr::id(op), Self::un_parse(l), Self::un_parse(r)])
+            },
+            StrLetExpr::Unary { op, operand } => {
+                let op = match op {
+                    UnOp::Car => "car",
+                    UnOp::Cdr => "cdr",
+                    UnOp::Empty => "empty",
+                    UnOp::Length => "length",
+                    UnOp::Minus => "minus",
+                    UnOp::IsZero => "is_zero",
+                    UnOp::AsBool => "as_bool",
+                    UnOp::Not => "not",
+                    UnOp::AsNumber => "as_number"
+                };
+                SExpr::list([ SExpr::id(op), Self::un_parse(operand)])
+            },
+            StrLetExpr::Var(v) => SExpr::id(v),
+            StrLetExpr::Let { bindings, expr } => {
+                let mut v = vec![SExpr::id("let")];
+                for (key, value) in bindings.iter() {
+                    v.extend_from_slice(&[ SExpr::id(key), SExpr::id("as"), Self::un_parse(value)]);
+                }
+                v.extend_from_slice(&[SExpr::id("in"), Self::un_parse(expr)]);
+                SExpr::list(v)
+            },
+            StrLetExpr::Unpack { bindings, unpacked_expr, expr } => {
+                let bindings = SExpr::list(bindings.iter().map(|it| SExpr::id(it)));
+                SExpr::list([
+                    SExpr::id("unpack"),
+                    bindings,
+                    SExpr::id("from"),
+                    Self::un_parse(unpacked_expr),
+                    SExpr::id("in"),
+                    Self::un_parse(expr)
+                ])
+            },
+            StrLetExpr::MakeList(values) => {
+                let mut v = vec![SExpr::id("make_list")];
+                v.extend(values.iter().map(|it| Self::un_parse(it)));
+                SExpr::list(v)
+            }
+        }
     }
 }
 
 pub fn ex_3_let() {
     let test_cases = [
-        s_expr!( 10 ),
-        s_expr!( false ),
-        s_expr!( ( make_list 1 2 3 ) ),
-        s_expr!( a ),
-        s_expr!( ( is_zero a ) ),
-        s_expr!( ( as_bool a ) ),
-        s_expr!( ( minus a ) ),
-        s_expr!( b ),
-        s_expr!( ( is_zero b ) ),
-        s_expr!( ( as_bool b ) ),
-        s_expr!( ( minus b ) ),
-        s_expr!( c ),
-        s_expr!( ( is_zero c ) ),
-        s_expr!( ( as_bool c ) ),
-        s_expr!( ( minus c ) ),
-        s_expr!( d ),
-        s_expr!( ( is_zero d ) ),
-        s_expr!( ( as_bool d ) ),
-        s_expr!( ( minus d ) ),
-        s_expr!( e ),
-        s_expr!( ( is_zero e ) ),
-        s_expr!( ( as_number e ) ),
-        s_expr!( ( if e then 1 else 0 ) ),
-        s_expr!( ( sub a b ) ),
-        s_expr!( ( add a b ) ),
-        s_expr!( ( mul a b ) ),
-        s_expr!( ( div a b ) ),
-        s_expr!( ( rem a b ) ),
-        s_expr!( ( let e as ( if c then 5 else 10 ) in ( sub ( add a e ) b ) ) ),
-        s_expr!( ( let e as true in ( if e then 100500 else false ) ) ),
-        s_expr!(
+        s_expr_ch3!( 10 ),
+        s_expr_ch3!( false ),
+        s_expr_ch3!( [ 1 2 3 ] ),
+        s_expr_ch3!( a ),
+        s_expr_ch3!( ( is_zero a ) ),
+        s_expr_ch3!( ( as_bool a ) ),
+        s_expr_ch3!( ( minus a ) ),
+        s_expr_ch3!( b ),
+        s_expr_ch3!( ( is_zero b ) ),
+        s_expr_ch3!( ( as_bool b ) ),
+        s_expr_ch3!( ( minus b ) ),
+        s_expr_ch3!( c ),
+        s_expr_ch3!( ( is_zero c ) ),
+        s_expr_ch3!( ( as_bool c ) ),
+        s_expr_ch3!( ( minus c ) ),
+        s_expr_ch3!( d ),
+        s_expr_ch3!( ( is_zero d ) ),
+        s_expr_ch3!( ( as_bool d ) ),
+        s_expr_ch3!( ( minus d ) ),
+        s_expr_ch3!( e ),
+        s_expr_ch3!( ( is_zero e ) ),
+        s_expr_ch3!( ( as_number e ) ),
+        s_expr_ch3!( ( if e then 1 else 0 ) ),
+        s_expr_ch3!( ( sub a b ) ),
+        s_expr_ch3!( ( add a b ) ),
+        s_expr_ch3!( ( mul a b ) ),
+        s_expr_ch3!( ( div a b ) ),
+        s_expr_ch3!( ( rem a b ) ),
+        s_expr_ch3!( ( let e as ( if c then 5 else 10 ) in ( sub ( add a e ) b ) ) ),
+        s_expr_ch3!( ( let e as true in ( if e then 100500 else false ) ) ),
+        s_expr_ch3!(
             ( is_zero
                 ( let z as 2 x as 3 in
                     ( let y as ( sub x 1 ) in
                         ( let x as 4 in ( sub z ( sub x y ) ) ) ) ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( let x as 2 y as 3 in
                 ( let x as ( sub y x ) in
                     ( sub y x ) ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( let
-                l1 as ( cons 1 ( make_list 2 3 ) )
-                l2 as ( cons 5 ( cons 6 ( make_list ) ) )
+                l1 as ( cons 1 [ 2 3 ] )
+                l2 as ( cons 5 ( cons 6 ( [  ] ) ) )
                 in
                 ( add
                     ( car ( cdr l1 ) )
                     ( car l2 ) ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( let
-                l1 as ( make_list 1 2 3 )
-                l2 as ( make_list 5 6 )
+                l1 as [ 1 2 3 ]
+                l2 as [ 5 6 ]
                 in
-                ( add
+                ( sub
                     ( car ( cdr ( cdr l1 ) ) )
                     ( car l2 ) ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( is_zero
-                ( unpack ( z x ) from ( make_list 2 3 ) in
+                ( unpack ( z x ) from [ 2 3 ] in
                     ( let y as ( sub x 1 ) in
                         ( let x as 4 in ( sub z ( sub x y ) ) ) ) ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( unpack ( l1 l2 )
-                from ( make_list
-                    ( print ( make_list 1 2 3 ) )
-                    ( print ( make_list 4 5 ) ) ) in
-                ( let l as ( print ( concat l1 l2 ) ) in
-                    ( print ( make_list
-                        ( eq ( length l ) 3 )
-                        ( eq ( length l1 ) 3 )
-                        ( eq ( length l2 ) 3 )
-                        ( eq l ( make_list 1 2 3 4 5 ) ) ) ) ) ) ),
-        s_expr!(
-            ( let l as ( make_list 1 true ( make_list 1 2 3 ) ( make_list false false false ) ) in
+                from [
+                    ( print [ 1 2 3 ] )
+                    ( print [ 4 5 ] )
+                ] in
+            ( let l as ( print ( concat l1 l2 ) ) in
+            ( print [
+                ( eq ( length l ) 3 )
+                ( eq ( length l1 ) 3 )
+                ( eq ( length l2 ) 3 )
+                ( eq l [ 1 2 3 4 5 ] ) ] ) ) ) ),
+        s_expr_ch3!(
+            ( let l as [ 1 true [ 1 2 3 ] [ false false false ] ] in
                 ( print l ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( let
                 x as 4
                 y as 3
@@ -859,7 +915,7 @@ pub fn ex_3_let() {
                     when ( eq y 3 ) then y
                     when ( not z ) then z
                     else 42 ) ) ),
-        s_expr!(
+        s_expr_ch3!(
             ( let
                 x as 3
                 y as 5
@@ -886,10 +942,10 @@ pub fn ex_3_let() {
                 println!("{:?}", &expr);
                 let result = expr.eval(&env);
                 println!("{:?}", result);
+                let un_parsed = StrLetParser::un_parse(&expr);
+                println!("{un_parsed}");
             }
-            Err(error) => {
-                println!("Failed to parse! {error}")
-            }
+            Err(error) => println!("Failed to parse! {error}"),
         }
         println!();
     }

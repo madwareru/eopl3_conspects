@@ -509,10 +509,10 @@ fun ex3_let_proc_interpreter() {
         let factorial = (
             call-self
             { maker ->
-                { n -> 
-                    if ( one-or-less? n ) 
-                        then n else 
-                        ( mul n ( ( call-self maker ) ( pred n ) ) ) 
+                { n ->
+                    if ( one-or-less? n )
+                        then n else
+                        ( mul n ( ( call-self maker ) ( pred n ) ) )
                 }
             }
         ) in
@@ -522,11 +522,11 @@ fun ex3_let_proc_interpreter() {
     test("""
         let one-or-less? = { n -> ( not ( greater? n 1 ) ) } in
         let pred = { n -> ( sub n 1 ) } in
-        let rec factorial = { n -> 
-            if ( one-or-less? n ) 
-                then n 
-                else ( mul n ( factorial ( pred n ) ) ) 
-        } in 
+        let rec factorial = { n ->
+            if ( one-or-less? n )
+                then n
+                else ( mul n ( factorial ( pred n ) ) )
+        } in
         ( print ( factorial 10 ) )
         """.trimIndent() // prints 3628800
     )
