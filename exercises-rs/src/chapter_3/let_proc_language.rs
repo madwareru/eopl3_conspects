@@ -1,9 +1,12 @@
-use std::fmt::{Debug, Formatter};
-use std::rc::Rc;
+use std::{
+    fmt::{Debug, Formatter},
+    rc::Rc
+};
+use crate::{
+    chapter_3::shared_s_expr::{Parser, SExpr},
+    s_expr_ch3
+};
 use thiserror::Error;
-use crate::chapter_3::shared_s_expr::Parser;
-use super::shared_s_expr::SExpr;
-use crate::s_expr_ch3;
 
 pub trait Evaluatable {
     fn eval(&self, env: &LetProcEnv) -> Result<LetProcValue, LetProcError>;
@@ -18,7 +21,7 @@ pub enum LetProcValue {
 }
 
 impl LetProcValue {
-    pub fn eval(&self, bindings: &[LetProcValue]) -> Result<LetProcValue, LetProcError> {
+    pub fn call(&self, bindings: &[LetProcValue]) -> Result<LetProcValue, LetProcError> {
         match self {
             LetProcValue::UserProc(user_proc) => {
                 match (user_proc.arguments.len(), bindings.len()) {
@@ -140,7 +143,7 @@ impl LetProcValue {
                     _ => unreachable!()
                 }
             },
-            _ => Err(LetProcError::Unknown)
+            _ => Err(LetProcError::CantCallNonProcValue)
         }
     }
 }
@@ -153,10 +156,26 @@ pub struct LetProcUser {
     body: Rc<LetProcExpression>
 }
 
-#[derive(Clone, Debug)]
+#[derive(Error, Debug)]
 pub enum LetProcError {
+    #[error("Can't compare values")]
+    CantCompareValues,
+    #[error("Can't cast to boolean the value")]
+    CantCastToBool,
+    #[error("Can't cast to number")]
+    CantCastToNumber,
+    #[error("Can't call non procedure value")]
+    CantCallNonProcValue,
+    #[error("Can't bind non procedure value as recursive")]
+    CantBindRecursiveToNonProc,
+    #[error("Name `{bound_name}` not found")]
     NameNotFound { bound_name: String },
+    #[error("Unknown error")]
     Unknown
+}
+
+impl IntoLetProcValue for LetProcValue {
+    fn into_let_proc_value(self) -> LetProcValue { self }
 }
 
 impl Evaluatable
@@ -172,10 +191,6 @@ for fn(&LetProcValue, &LetProcValue) -> Result<LetProcValue, LetProcError> {
 
         self(lhs, rhs)
     }
-}
-
-impl IntoLetProcValue for LetProcValue {
-    fn into_let_proc_value(self) -> LetProcValue { self }
 }
 
 impl IntoLetProcValue for
@@ -230,7 +245,7 @@ impl Evaluatable for CallSelf {
                         args: vec![proc_expr]
                     }.eval(env)
                 },
-                _ => Err(LetProcError::Unknown)
+                _ => Err(LetProcError::CantCallNonProcValue)
             },
             _ => Err(LetProcError::NameNotFound { bound_name: "__proc__".into() })
         }
@@ -392,7 +407,7 @@ impl Evaluatable for LetProcExpression {
                 match condition.eval(env)? {
                     LetProcValue::Boolean(true) => then.eval(env),
                     LetProcValue::Boolean(false) => otherwise.eval(env),
-                    _ => Err(LetProcError::Unknown)
+                    _ => Err(LetProcError::CantCastToBool)
                 }
             }
             LetProcExpression::Let { recursive, bound_name, value, expr } => {
@@ -406,7 +421,7 @@ impl Evaluatable for LetProcExpression {
                             body: user_proc.body
                         }))
                     },
-                    _ => Err(LetProcError::Unknown)
+                    _ => Err(LetProcError::CantBindRecursiveToNonProc)
                 }?;
 
                 let new_env = env.append(bound_name, v);
@@ -420,7 +435,7 @@ impl Evaluatable for LetProcExpression {
 
                 let proc = callee.eval(env)?;
 
-                proc.eval(&safe_arguments)
+                proc.call(&safe_arguments)
             }
         }
     }
@@ -430,8 +445,14 @@ pub struct StrLetProcParser;
 
 #[derive(Error, Debug)]
 pub enum StrLetProcParseError {
-    #[error("Fail")]
-    Fail
+    #[error("Detected non-id node at identifier position")]
+    NonIdNodeAtIdentifierPosition,
+    #[error("Detected garbage at the end of let form")]
+    GarbageAtTheEndOfLetForm,
+    #[error("Detected garbage at the end of if form")]
+    GarbageAtTheEndOfIfForm,
+    #[error("Detected unknown form")]
+    UnknownForm
 }
 
 impl Parser<SExpr, LetProcExpression> for StrLetProcParser {
@@ -458,8 +479,7 @@ impl Parser<SExpr, LetProcExpression> for StrLetProcParser {
                                 otherwise: Rc::new(Self::parse(ls)?)
                             })
                         } else {
-                            // todo: make more meaningful error message
-                            Err(StrLetProcParseError::Fail)
+                            Err(StrLetProcParseError::GarbageAtTheEndOfIfForm)
                         }
                     },
                     [SExpr::Id(proc_id), .. , body] if proc_id.eq("proc") => {
@@ -469,8 +489,7 @@ impl Parser<SExpr, LetProcExpression> for StrLetProcParser {
                             let arg = if let SExpr::Id(id) = arg {
                                 Ok(id)
                             } else {
-                                // todo: make more meaningful error message
-                                Err(StrLetProcParseError::Fail)
+                                Err(StrLetProcParseError::NonIdNodeAtIdentifierPosition)
                             }?;
                             arguments.push(arg.into())
                         }
@@ -497,8 +516,7 @@ impl Parser<SExpr, LetProcExpression> for StrLetProcParser {
                                 expr: Rc::new(Self::parse(expr)?)
                             })
                         } else {
-                            // todo: make more meaningful error message
-                            Err(StrLetProcParseError::Fail)
+                            Err(StrLetProcParseError::GarbageAtTheEndOfLetForm)
                         }
                     },
                     [
@@ -520,8 +538,7 @@ impl Parser<SExpr, LetProcExpression> for StrLetProcParser {
                                 expr: Rc::new(Self::parse(expr)?)
                             })
                         } else {
-                            // todo: make more meaningful error message
-                            Err(StrLetProcParseError::Fail)
+                            Err(StrLetProcParseError::GarbageAtTheEndOfLetForm)
                         }
                     },
                     [ callee, .. ] => {
@@ -533,18 +550,13 @@ impl Parser<SExpr, LetProcExpression> for StrLetProcParser {
                         }
                         Ok( LetProcExpression::Call { callee, args } )
                     }
-                    _ => {
-                        // todo: make more meaningful error message
-                        Err(StrLetProcParseError::Fail)
-                    },
+                    _ => Err(StrLetProcParseError::UnknownForm),
                 }
             }
         }
     }
 
-    fn un_parse(_input: &LetProcExpression) -> SExpr {
-        todo!()
-    }
+    fn un_parse(_input: &LetProcExpression) -> SExpr { unimplemented!() }
 }
 
 pub fn ex_3_let_proc() {
@@ -659,8 +671,6 @@ pub fn ex_3_let_proc() {
                 println!("{:?}", &expr);
                 let result = expr.eval(&env);
                 println!("{:?}", result);
-                // let un_parsed = StrLetProcParser::un_parse(&expr);
-                // println!("{un_parsed}");
             }
             Err(error) => println!("Failed to parse! {error}"),
         }
@@ -668,113 +678,116 @@ pub fn ex_3_let_proc() {
     }
 }
 
-
-
 fn make_env_with_intrinsics() -> LetProcEnv {
     let mut env = LetProcEnv::make().append("call_self", CallSelf);
 
-    macro_rules! add_unary(
-        ($id:ident => $expr:expr) => {
-            env = env.append(
-                stringify!($id),
-                {
-                    fn $id(op: &LetProcValue) -> Result<LetProcValue, LetProcError> { $expr(op) }
-                    $id as fn(&LetProcValue) -> Result<LetProcValue, LetProcError>
-                }
-            );
+    macro_rules! add_unary_intrinsics (
+        ($($id:ident => $e:expr),+) => {
+            $({
+                env = env.append(
+                    stringify!($id),
+                    $e as fn(&LetProcValue) -> Result<LetProcValue, LetProcError>
+                );
+            })+
         }
     );
 
-    macro_rules! add_binary(
-        ($id:ident => $expr:expr) => {
-            env = env.append(stringify!($id), {
-                fn $id(l: &LetProcValue, r: &LetProcValue) -> Result<LetProcValue, LetProcError> {
-                    $expr(l, r)
-                }
-                $id as fn(&LetProcValue, &LetProcValue) -> Result<LetProcValue, LetProcError>
-            });
-        }
+    macro_rules! add_binary_intrinsics (
+        ($($id:ident => $e:expr),+) => {
+            $({
+                env = env.append(
+                    stringify!($id),
+                    $e as fn(&LetProcValue, &LetProcValue) -> Result<LetProcValue, LetProcError>
+                );
+            })+
+        };
     );
 
-    add_unary!(identity => |op: &LetProcValue| { Ok(op.clone()) });
-    add_binary!(add => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Number(*ln + *rn))
-    });
-    add_binary!(sub => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Number(*ln - *rn))
-    });
-    add_binary!(mul => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Number(*ln * *rn))
-    });
-    add_binary!(div => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Number(*ln / *rn))
-    });
-    add_binary!(lt => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*ln < *rn))
-    });
-    add_binary!(gt => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*ln > *rn))
-    });
-    add_binary!(lt_eq => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*ln <= *rn))
-    });
-    add_binary!(gt_eq => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*ln >= *rn))
-    });
-    add_binary!(and => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Boolean(lb) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Boolean(rb) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*lb && *rb))
-    });
-    add_binary!(or => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Boolean(lb) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Boolean(rb) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*lb || *rb))
-    });
-    add_binary!(xor => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        let LetProcValue::Boolean(lb) = lhs else { return Err(LetProcError::Unknown); };
-        let LetProcValue::Boolean(rb) = rhs else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(*lb ^ *rb))
-    });
-    add_unary!(not => |op: &LetProcValue| {
-        let LetProcValue::Boolean(op) = op else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Boolean(!*op))
-    });
-    add_unary!(minus => |op: &LetProcValue| {
-        let LetProcValue::Number(op) = op else { return Err(LetProcError::Unknown); };
-        Ok(LetProcValue::Number(-*op))
-    });
-    add_binary!(eq => |lhs: &LetProcValue, rhs: &LetProcValue| {
-        match (lhs, rhs) {
-            (LetProcValue::Boolean(lb), LetProcValue::Boolean(rb)) => {
-                Ok(LetProcValue::Boolean(*lb == *rb))
-            },
-            (LetProcValue::Number(ln), LetProcValue::Number(rn)) => {
-                Ok(LetProcValue::Boolean(*ln == *rn))
-            },
-            _ => Err(LetProcError::Unknown)
+    add_binary_intrinsics!(
+        add => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Number(*ln + *rn))
+        },
+        sub => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Number(*ln - *rn))
+        },
+        mul => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Number(*ln * *rn))
+        },
+        div => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Number(*ln / *rn))
+        },
+        lt => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Boolean(*ln < *rn))
+        },
+        gt => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Boolean(*ln > *rn))
+        },
+        lt_eq => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Boolean(*ln <= *rn))
+        },
+        gt_eq => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Number(ln) = lhs else { return Err(LetProcError::CantCastToNumber); };
+            let LetProcValue::Number(rn) = rhs else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Boolean(*ln >= *rn))
+        },
+        and => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Boolean(lb) = lhs else { return Err(LetProcError::CantCastToBool); };
+            let LetProcValue::Boolean(rb) = rhs else { return Err(LetProcError::CantCastToBool); };
+            Ok(LetProcValue::Boolean(*lb && *rb))
+        },
+        or => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Boolean(lb) = lhs else { return Err(LetProcError::CantCastToBool); };
+            let LetProcValue::Boolean(rb) = rhs else { return Err(LetProcError::CantCastToBool); };
+            Ok(LetProcValue::Boolean(*lb || *rb))
+        },
+        xor => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            let LetProcValue::Boolean(lb) = lhs else { return Err(LetProcError::CantCastToBool); };
+            let LetProcValue::Boolean(rb) = rhs else { return Err(LetProcError::CantCastToBool); };
+            Ok(LetProcValue::Boolean(*lb ^ *rb))
+        },
+        eq => |lhs: &LetProcValue, rhs: &LetProcValue| {
+            match (lhs, rhs) {
+                (LetProcValue::Boolean(lb), LetProcValue::Boolean(rb)) => {
+                    Ok(LetProcValue::Boolean(*lb == *rb))
+                },
+                (LetProcValue::Number(ln), LetProcValue::Number(rn)) => {
+                    Ok(LetProcValue::Boolean(*ln == *rn))
+                },
+                _ => Err(LetProcError::CantCompareValues)
+            }
         }
-    });
-    add_unary!(print => |op: &LetProcValue| {
-        println!("{:?}", op);
-        Ok(op.clone())
-    });
+    );
+    add_unary_intrinsics!(
+        identity => |op: &LetProcValue| {
+            Ok(op.clone())
+        },
+        not => |op: &LetProcValue| {
+            let LetProcValue::Boolean(op) = op else { return Err(LetProcError::CantCastToBool); };
+            Ok(LetProcValue::Boolean(!*op))
+        },
+        minus => |op: &LetProcValue| {
+            let LetProcValue::Number(op) = op else { return Err(LetProcError::CantCastToNumber); };
+            Ok(LetProcValue::Number(-*op))
+        },
+        print => |op: &LetProcValue| {
+            println!("{:?}", op);
+            Ok(op.clone())
+        }
+    );
 
     env
 }
