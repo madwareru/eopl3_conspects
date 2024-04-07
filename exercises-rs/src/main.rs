@@ -1,5 +1,8 @@
+extern crate core;
+
 use std::collections::HashMap;
 
+pub mod shared;
 pub mod chapter_1;
 pub mod chapter_2;
 pub mod chapter_3;
@@ -34,7 +37,8 @@ fn main() {
         "2.15": chapter_2::exercise_15::ex_2_15,
         "2.29": chapter_2::exercise_29::ex_2_29,
         "3.let": chapter_3::let_language::ex_3_let,
-        "3.let proc": chapter_3::let_proc_language::ex_3_let_proc
+        "3.let proc": chapter_3::let_proc_language::ex_3_let_proc,
+        "3.imperative": chapter_3::imperative_language::ex_3_imperative_lang
     ];
 
     let mut buffer = String::new();
