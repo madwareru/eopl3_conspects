@@ -167,6 +167,44 @@ impl<T> ReleaseTemps for FlatArena<T> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! replace_with_usize { ($x:tt) => { usize }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_arena {
+    ($tn: ident, $num:tt, $typ:ty) => {
+        impl crate::shared::arena::TypedArena<$typ> for $tn {
+            fn alloc(
+                &mut self,
+                value: $typ
+            ) -> crate::shared::arena::HandleId<$typ> { self.$num.alloc(value) }
+
+            fn alloc_temp(
+                &mut self,
+                init: impl FnOnce() -> $typ,
+                reset: impl FnOnce(&mut $typ) -> ()
+            ) -> HandleId<$typ> { self.$num.alloc_temp(init, reset) }
+
+            fn dealloc(
+                &mut self,
+                handle: crate::shared::arena::HandleId<$typ>
+            ) -> bool { self.$num.dealloc(handle) }
+
+            fn get(
+                &self,
+                handle: crate::shared::arena::HandleId<$typ>
+            ) -> Option<&$typ> { self.$num.get(handle) }
+
+            fn get_mut(
+                &mut self,
+                handle: crate::shared::arena::HandleId<$typ>
+            ) -> Option<&mut $typ> { self.$num.get_mut(handle) }
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! declare_arena {
     ($name:ident($n0:tt: $t0:ty, $($n:tt: $t:ty),+)) => {
@@ -183,9 +221,8 @@ macro_rules! declare_arena {
             }
         }
 
-        macro_rules! replace_with_usize { ($x:tt) => { usize }; }
         impl crate::shared::arena::TempsCount for $name {
-            type CountType = (usize, $(replace_with_usize!($n)),+);
+            type CountType = (usize, $($crate::replace_with_usize!($n)),+);
             fn temps_count(&self) -> Self::CountType {
                 (
                     self.$n0.temps_count(),
@@ -200,38 +237,7 @@ macro_rules! declare_arena {
                 $(self.$n.release_temporaries(target_count.$n);)+
             }
         }
-
-        macro_rules! impl_arena {
-            ($num:tt, $typ:ty) => {
-                impl crate::shared::arena::TypedArena<$typ> for $name {
-                    fn alloc(
-                        &mut self,
-                        value: $typ
-                    ) -> crate::shared::arena::HandleId<$typ> { self.$num.alloc(value) }
-
-                    fn alloc_temp(
-                        &mut self,
-                        init: impl FnOnce() -> $typ,
-                        reset: impl FnOnce(&mut $typ) -> ()
-                    ) -> HandleId<$typ> { self.$num.alloc_temp(init, reset) }
-
-                    fn dealloc(
-                        &mut self,
-                        handle: crate::shared::arena::HandleId<$typ>
-                    ) -> bool { self.$num.dealloc(handle) }
-
-                    fn get(
-                        &self,
-                        handle: crate::shared::arena::HandleId<$typ>
-                    ) -> Option<&$typ> { self.$num.get(handle) }
-
-                    fn get_mut(
-                        &mut self,
-                        handle: crate::shared::arena::HandleId<$typ>
-                    ) -> Option<&mut $typ> { self.$num.get_mut(handle) }
-                }
-            };
-        }
-        impl_arena!($n0, $t0); $(impl_arena!($n, $t);)+
+        $crate::impl_arena!($name, $n0, $t0);
+        $($crate::impl_arena!($name, $n, $t);)+
     };
 }
