@@ -1,14 +1,14 @@
-use crate::define_arena;
-use crate::shared::arena::{HandleId, ReleaseTemps, TypedArena};
+use crate::declare_arena;
+use crate::shared::arena::{HandleId, ReleaseTemps, TempsCount, TypedArena};
 
-define_arena! {
+declare_arena! {
     ImperativeLangArena(
-        String, // reusable strings for names
-        ImperativeEnvData,
-        LangValueData,
-        StatementData,
-        ExpressionData,
-        FunctionData
+        0: String, // reusable strings for names
+        1: ImperativeEnvData,
+        2: LangValueData,
+        3: StatementData,
+        4: ExpressionData,
+        5: FunctionData
     )
 }
 
@@ -124,16 +124,18 @@ impl ImperativeEnv {
         value: impl IntoLangValue
     ) -> bool {
         let v = value.into_lang_value(lang_context);
-        let Some(handle) = self.get(lang_context, name) else { return false; };
-        let Some(&v) = lang_context.evaluation_arena.get(v.0) else { return false };
-
-        lang_context.evaluation_arena.get_mut(handle.0).map(|it| {
-            match (it, v) {
-                (LangValueData::Number(n), LangValueData::Number(v)) => { *n = v; true },
-                (LangValueData::Boolean(b), LangValueData::Boolean(v)) => { *b = v; true }
-                _ => false
-            }
-        }).unwrap_or(false)
+        match (self.get(lang_context, name), lang_context.evaluation_arena.get(v.0)) {
+            (Some(handle), Some(&v)) => {
+                lang_context.evaluation_arena.get_mut(handle.0).map(|it| {
+                    match (it, v) {
+                        (LangValueData::Number(n), LangValueData::Number(v)) => { *n = v; true },
+                        (LangValueData::Boolean(b), LangValueData::Boolean(v)) => { *b = v; true }
+                        _ => false
+                    }
+                }).unwrap_or(false)
+            },
+            _ => false
+        }
     }
 }
 

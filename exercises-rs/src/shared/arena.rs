@@ -10,12 +10,13 @@ impl<T> Clone for HandleId<T> {
 }
 impl<T> Copy for HandleId<T> {}
 
-pub trait ReleaseTemps {
+pub trait TempsCount {
     type CountType : Copy;
-
-    fn release_temporaries(&mut self, target_count: Self::CountType);
-
     fn temps_count(&self) -> Self::CountType;
+}
+
+pub trait ReleaseTemps : TempsCount {
+    fn release_temporaries(&mut self, target_count: Self::CountType);
 
     fn auto_release(&mut self) -> AutoReleaseTemps<Self> where Self: Sized {
         AutoReleaseTemps(self.temps_count(), self)
@@ -148,9 +149,15 @@ impl<T> TypedArena<T> for FlatArena<T> {
     }
 }
 
-impl<T> ReleaseTemps for FlatArena<T> {
+impl<T> TempsCount for FlatArena<T> {
     type CountType = usize;
 
+    fn temps_count(&self) -> Self::CountType {
+        self.temp_allocations.len()
+    }
+}
+
+impl<T> ReleaseTemps for FlatArena<T> {
     fn release_temporaries(&mut self, target_count: Self::CountType) {
         let mut temp_allocs = std::mem::take(&mut self.temp_allocations);
         for handle_id in temp_allocs.drain(target_count..) {
@@ -158,954 +165,73 @@ impl<T> ReleaseTemps for FlatArena<T> {
         }
         self.temp_allocations = temp_allocs;
     }
-
-    fn temps_count(&self) -> Self::CountType {
-        self.temp_allocations.len()
-    }
 }
 
 #[macro_export]
-macro_rules! define_arena(
-    ($name:ident($t0:ty, $t1:ty)) => {
-        pub struct $name(crate::shared::arena::FlatArena<$t0>, crate::shared::arena::FlatArena<$t1>);
-
-        impl $name {
-            pub fn new() -> Self {
-                Self(crate::shared::arena::FlatArena::new(), crate::shared::arena::FlatArena::new())
-            }
-        }
-
-        impl crate::shared::arena::ReleaseTemps for $name {
-            type CountType = (usize, usize);
-
-            fn release_temporaries(&mut self, target_count: Self::CountType) {
-                self.0.release_temporaries(target_count.0);
-                self.1.release_temporaries(target_count.1);
-            }
-
-            fn temps_count(&self) -> Self::CountType {
-                (
-                    self.0.temps_count(),
-                    self.1.temps_count()
-                )
-            }
-        }
-
-        impl crate::shared::arena::TypedArena<$t0> for $name {
-            fn alloc(&mut self, value: $t0) -> crate::shared::arena::HandleId<$t0> {
-                self.0.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t0,
-                reset: impl FnOnce(&mut $t0) -> ()
-            ) -> HandleId<$t0> {
-                self.0.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> bool {
-                self.0.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&$t0> {
-                self.0.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&mut $t0> {
-                self.0.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t1> for $name {
-            fn alloc(&mut self, value: $t1) -> crate::shared::arena::HandleId<$t1> {
-                self.1.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t1,
-                reset: impl FnOnce(&mut $t1) -> ()
-            ) -> HandleId<$t1> {
-                self.1.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> bool {
-                self.1.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&$t1> {
-                self.1.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&mut $t1> {
-                self.1.get_mut(handle)
-            }
-        }
-    };
-    ($name:ident($t0:ty, $t1:ty, $t2:ty)) => {
+macro_rules! declare_arena {
+    ($name:ident($n0:tt: $t0:ty, $($n:tt: $t:ty),+)) => {
         pub struct $name(
             crate::shared::arena::FlatArena<$t0>,
-            crate::shared::arena::FlatArena<$t1>,
-            crate::shared::arena::FlatArena<$t2>
+            $(crate::shared::arena::FlatArena<$t>),+
         );
-
         impl $name {
             pub fn new() -> Self {
                 Self(
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
+                    crate::shared::arena::FlatArena::<$t0>::new(),
+                    $(crate::shared::arena::FlatArena::<$t>::new()),+
+                )
+            }
+        }
+
+        macro_rules! replace_with_usize { ($x:tt) => { usize }; }
+        impl crate::shared::arena::TempsCount for $name {
+            type CountType = (usize, $(replace_with_usize!($n)),+);
+            fn temps_count(&self) -> Self::CountType {
+                (
+                    self.$n0.temps_count(),
+                    $(self.$n.temps_count()),+
                 )
             }
         }
 
         impl crate::shared::arena::ReleaseTemps for $name {
-            type CountType = (usize, usize, usize);
-
             fn release_temporaries(&mut self, target_count: Self::CountType) {
-                self.0.release_temporaries(target_count.0);
-                self.1.release_temporaries(target_count.1);
-                self.2.release_temporaries(target_count.2);
-            }
-
-            fn temps_count(&self) -> Self::CountType {
-                (
-                    self.0.temps_count(),
-                    self.1.temps_count(),
-                    self.2.temps_count()
-                )
+                self.$n0.release_temporaries(target_count.$n0);
+                $(self.$n.release_temporaries(target_count.$n);)+
             }
         }
 
-        impl crate::shared::arena::TypedArena<$t0> for $name {
-            fn alloc(&mut self, value: $t0) -> crate::shared::arena::HandleId<$t0> {
-                self.0.alloc(value)
-            }
+        macro_rules! impl_arena {
+            ($num:tt, $typ:ty) => {
+                impl crate::shared::arena::TypedArena<$typ> for $name {
+                    fn alloc(
+                        &mut self,
+                        value: $typ
+                    ) -> crate::shared::arena::HandleId<$typ> { self.$num.alloc(value) }
 
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t0,
-                reset: impl FnOnce(&mut $t0) -> ()
-            ) -> HandleId<$t0> {
-                self.0.alloc_temp(init, reset)
-            }
+                    fn alloc_temp(
+                        &mut self,
+                        init: impl FnOnce() -> $typ,
+                        reset: impl FnOnce(&mut $typ) -> ()
+                    ) -> HandleId<$typ> { self.$num.alloc_temp(init, reset) }
 
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> bool {
-                self.0.dealloc(handle)
-            }
+                    fn dealloc(
+                        &mut self,
+                        handle: crate::shared::arena::HandleId<$typ>
+                    ) -> bool { self.$num.dealloc(handle) }
 
-            fn get(&self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&$t0> {
-                self.0.get(handle)
-            }
+                    fn get(
+                        &self,
+                        handle: crate::shared::arena::HandleId<$typ>
+                    ) -> Option<&$typ> { self.$num.get(handle) }
 
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&mut $t0> {
-                self.0.get_mut(handle)
-            }
+                    fn get_mut(
+                        &mut self,
+                        handle: crate::shared::arena::HandleId<$typ>
+                    ) -> Option<&mut $typ> { self.$num.get_mut(handle) }
+                }
+            };
         }
-        impl crate::shared::arena::TypedArena<$t1> for $name {
-            fn alloc(&mut self, value: $t1) -> crate::shared::arena::HandleId<$t1> {
-                self.1.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t1,
-                reset: impl FnOnce(&mut $t1) -> ()
-            ) -> HandleId<$t1> {
-                self.1.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> bool {
-                self.1.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&$t1> {
-                self.1.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&mut $t1> {
-                self.1.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t2> for $name {
-            fn alloc(&mut self, value: $t2) -> crate::shared::arena::HandleId<$t2> {
-                self.2.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t2,
-                reset: impl FnOnce(&mut $t2) -> ()
-            ) -> HandleId<$t2> {
-                self.2.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> bool {
-                self.2.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&$t2> {
-                self.2.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&mut $t2> {
-                self.2.get_mut(handle)
-            }
-        }
+        impl_arena!($n0, $t0); $(impl_arena!($n, $t);)+
     };
-    ($name:ident($t0:ty, $t1:ty, $t2:ty, $t3:ty)) => {
-        pub struct $name(
-            crate::shared::arena::FlatArena<$t0>,
-            crate::shared::arena::FlatArena<$t1>,
-            crate::shared::arena::FlatArena<$t2>,
-            crate::shared::arena::FlatArena<$t3>
-        );
-
-        impl $name {
-            pub fn new() -> Self {
-                Self(
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                )
-            }
-        }
-
-        impl crate::shared::arena::ReleaseTemps for $name {
-            type CountType = (usize, usize, usize, usize);
-
-            fn release_temporaries(&mut self, target_count: Self::CountType) {
-                self.0.release_temporaries(target_count.0);
-                self.1.release_temporaries(target_count.1);
-                self.2.release_temporaries(target_count.2);
-                self.3.release_temporaries(target_count.3);
-            }
-
-            fn temps_count(&self) -> Self::CountType {
-                (
-                    self.0.temps_count(),
-                    self.1.temps_count(),
-                    self.2.temps_count(),
-                    self.3.temps_count()
-                )
-            }
-        }
-
-        impl crate::shared::arena::TypedArena<$t0> for $name {
-            fn alloc(&mut self, value: $t0) -> crate::shared::arena::HandleId<$t0> {
-                self.0.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t0,
-                reset: impl FnOnce(&mut $t0) -> ()
-            ) -> HandleId<$t0> {
-                self.0.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> bool {
-                self.0.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&$t0> {
-                self.0.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&mut $t0> {
-                self.0.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t1> for $name {
-            fn alloc(&mut self, value: $t1) -> crate::shared::arena::HandleId<$t1> {
-                self.1.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t1,
-                reset: impl FnOnce(&mut $t1) -> ()
-            ) -> HandleId<$t1> {
-                self.1.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> bool {
-                self.1.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&$t1> {
-                self.1.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&mut $t1> {
-                self.1.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t2> for $name {
-            fn alloc(&mut self, value: $t2) -> crate::shared::arena::HandleId<$t2> {
-                self.2.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t2,
-                reset: impl FnOnce(&mut $t2) -> ()
-            ) -> HandleId<$t2> {
-                self.2.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> bool {
-                self.2.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&$t2> {
-                self.2.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&mut $t2> {
-                self.2.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t3> for $name {
-            fn alloc(&mut self, value: $t3) -> crate::shared::arena::HandleId<$t3> {
-                self.3.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t3,
-                reset: impl FnOnce(&mut $t3) -> ()
-            ) -> HandleId<$t3> {
-                self.3.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> bool {
-                self.3.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&$t3> {
-                self.3.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&mut $t3> {
-                self.3.get_mut(handle)
-            }
-        }
-    };
-    ($name:ident(
-        $t0:ty,
-        $t1:ty,
-        $t2:ty,
-        $t3:ty,
-        $t4:ty
-    )) => {
-        pub struct $name(
-            crate::shared::arena::FlatArena<$t0>,
-            crate::shared::arena::FlatArena<$t1>,
-            crate::shared::arena::FlatArena<$t2>,
-            crate::shared::arena::FlatArena<$t3>,
-            crate::shared::arena::FlatArena<$t4>
-        );
-
-        impl $name {
-            pub fn new() -> Self {
-                Self(
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                )
-            }
-        }
-
-        impl crate::shared::arena::ReleaseTemps for $name {
-            type CountType = (usize, usize, usize, usize, usize);
-
-            fn release_temporaries(&mut self, target_count: Self::CountType) {
-                self.0.release_temporaries(target_count.0);
-                self.1.release_temporaries(target_count.1);
-                self.2.release_temporaries(target_count.2);
-                self.3.release_temporaries(target_count.3);
-                self.4.release_temporaries(target_count.4);
-            }
-
-            fn temps_count(&self) -> Self::CountType {
-                (
-                    self.0.temps_count(),
-                    self.1.temps_count(),
-                    self.2.temps_count(),
-                    self.3.temps_count(),
-                    self.4.temps_count()
-                )
-            }
-        }
-
-        impl crate::shared::arena::TypedArena<$t0> for $name {
-            fn alloc(&mut self, value: $t0) -> crate::shared::arena::HandleId<$t0> {
-                self.0.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t0,
-                reset: impl FnOnce(&mut $t0) -> ()
-            ) -> HandleId<$t0> {
-                self.0.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> bool {
-                self.0.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&$t0> {
-                self.0.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&mut $t0> {
-                self.0.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t1> for $name {
-            fn alloc(&mut self, value: $t1) -> crate::shared::arena::HandleId<$t1> {
-                self.1.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t1,
-                reset: impl FnOnce(&mut $t1) -> ()
-            ) -> HandleId<$t1> {
-                self.1.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> bool {
-                self.1.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&$t1> {
-                self.1.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&mut $t1> {
-                self.1.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t2> for $name {
-            fn alloc(&mut self, value: $t2) -> crate::shared::arena::HandleId<$t2> {
-                self.2.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t2,
-                reset: impl FnOnce(&mut $t2) -> ()
-            ) -> HandleId<$t2> {
-                self.2.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> bool {
-                self.2.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&$t2> {
-                self.2.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&mut $t2> {
-                self.2.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t3> for $name {
-            fn alloc(&mut self, value: $t3) -> crate::shared::arena::HandleId<$t3> {
-                self.3.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t3,
-                reset: impl FnOnce(&mut $t3) -> ()
-            ) -> HandleId<$t3> {
-                self.3.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> bool {
-                self.3.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&$t3> {
-                self.3.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&mut $t3> {
-                self.3.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t4> for $name {
-            fn alloc(&mut self, value: $t4) -> crate::shared::arena::HandleId<$t4> {
-                self.4.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t4,
-                reset: impl FnOnce(&mut $t4) -> ()
-            ) -> HandleId<$t4> {
-                self.4.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t4>) -> bool {
-                self.4.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t4>) -> Option<&$t4> {
-                self.4.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t4>) -> Option<&mut $t4> {
-                self.4.get_mut(handle)
-            }
-        }
-    };
-    ($name:ident(
-        $t0:ty,
-        $t1:ty,
-        $t2:ty,
-        $t3:ty,
-        $t4:ty,
-        $t5:ty
-    )) => {
-        pub struct $name(
-            crate::shared::arena::FlatArena<$t0>,
-            crate::shared::arena::FlatArena<$t1>,
-            crate::shared::arena::FlatArena<$t2>,
-            crate::shared::arena::FlatArena<$t3>,
-            crate::shared::arena::FlatArena<$t4>,
-            crate::shared::arena::FlatArena<$t5>
-        );
-
-        impl $name {
-            pub fn new() -> Self {
-                Self(
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                )
-            }
-        }
-
-        impl crate::shared::arena::ReleaseTemps for $name {
-            type CountType = (usize, usize, usize, usize, usize, usize);
-
-            fn release_temporaries(&mut self, target_count: Self::CountType) {
-                self.0.release_temporaries(target_count.0);
-                self.1.release_temporaries(target_count.1);
-                self.2.release_temporaries(target_count.2);
-                self.3.release_temporaries(target_count.3);
-                self.4.release_temporaries(target_count.4);
-                self.5.release_temporaries(target_count.5);
-            }
-
-            fn temps_count(&self) -> Self::CountType {
-                (
-                    self.0.temps_count(),
-                    self.1.temps_count(),
-                    self.2.temps_count(),
-                    self.3.temps_count(),
-                    self.4.temps_count(),
-                    self.5.temps_count()
-                )
-            }
-        }
-
-        impl crate::shared::arena::TypedArena<$t0> for $name {
-            fn alloc(&mut self, value: $t0) -> crate::shared::arena::HandleId<$t0> {
-                self.0.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t0,
-                reset: impl FnOnce(&mut $t0) -> ()
-            ) -> HandleId<$t0> {
-                self.0.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> bool {
-                self.0.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&$t0> {
-                self.0.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&mut $t0> {
-                self.0.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t1> for $name {
-            fn alloc(&mut self, value: $t1) -> crate::shared::arena::HandleId<$t1> {
-                self.1.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t1,
-                reset: impl FnOnce(&mut $t1) -> ()
-            ) -> HandleId<$t1> {
-                self.1.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> bool {
-                self.1.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&$t1> {
-                self.1.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&mut $t1> {
-                self.1.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t2> for $name {
-            fn alloc(&mut self, value: $t2) -> crate::shared::arena::HandleId<$t2> {
-                self.2.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t2,
-                reset: impl FnOnce(&mut $t2) -> ()
-            ) -> HandleId<$t2> {
-                self.2.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> bool {
-                self.2.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&$t2> {
-                self.2.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&mut $t2> {
-                self.2.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t3> for $name {
-            fn alloc(&mut self, value: $t3) -> crate::shared::arena::HandleId<$t3> {
-                self.3.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t3,
-                reset: impl FnOnce(&mut $t3) -> ()
-            ) -> HandleId<$t3> {
-                self.3.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> bool {
-                self.3.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&$t3> {
-                self.3.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&mut $t3> {
-                self.3.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t4> for $name {
-            fn alloc(&mut self, value: $t4) -> crate::shared::arena::HandleId<$t4> {
-                self.4.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t4,
-                reset: impl FnOnce(&mut $t4) -> ()
-            ) -> HandleId<$t4> {
-                self.4.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t4>) -> bool {
-                self.4.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t4>) -> Option<&$t4> {
-                self.4.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t4>) -> Option<&mut $t4> {
-                self.4.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t5> for $name {
-            fn alloc(&mut self, value: $t5) -> crate::shared::arena::HandleId<$t5> {
-                self.5.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t5,
-                reset: impl FnOnce(&mut $t5) -> ()
-            ) -> HandleId<$t5> {
-                self.5.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t5>) -> bool {
-                self.5.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t5>) -> Option<&$t5> {
-                self.5.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t5>) -> Option<&mut $t5> {
-                self.5.get_mut(handle)
-            }
-        }
-    };
-    ($name:ident(
-        $t0:ty,
-        $t1:ty,
-        $t2:ty,
-        $t3:ty,
-        $t4:ty,
-        $t5:ty,
-        $t6:ty
-    )) => {
-        pub struct $name(
-            crate::shared::arena::FlatArena<$t0>,
-            crate::shared::arena::FlatArena<$t1>,
-            crate::shared::arena::FlatArena<$t2>,
-            crate::shared::arena::FlatArena<$t3>,
-            crate::shared::arena::FlatArena<$t4>,
-            crate::shared::arena::FlatArena<$t5>,
-            crate::shared::arena::FlatArena<$t6>
-        );
-
-        impl $name {
-            pub fn new() -> Self {
-                Self(
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                    crate::shared::arena::FlatArena::new(),
-                )
-            }
-        }
-
-        impl crate::shared::arena::ReleaseTemps for $name {
-            type CountType = (usize, usize, usize, usize, usize, usize, usize);
-
-            fn release_temporaries(&mut self, target_count: Self::CountType) {
-                self.0.release_temporaries(target_count.0);
-                self.1.release_temporaries(target_count.1);
-                self.2.release_temporaries(target_count.2);
-                self.3.release_temporaries(target_count.3);
-                self.4.release_temporaries(target_count.4);
-                self.5.release_temporaries(target_count.5);
-                self.6.release_temporaries(target_count.6);
-            }
-
-            fn temps_count(&self) -> Self::CountType {
-                (
-                    self.0.temps_count(),
-                    self.1.temps_count(),
-                    self.2.temps_count(),
-                    self.3.temps_count(),
-                    self.4.temps_count(),
-                    self.5.temps_count(),
-                    self.6.temps_count()
-                )
-            }
-        }
-
-        impl crate::shared::arena::TypedArena<$t0> for $name {
-            fn alloc(&mut self, value: $t0) -> crate::shared::arena::HandleId<$t0> {
-                self.0.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t0,
-                reset: impl FnOnce(&mut $t0) -> ()
-            ) -> HandleId<$t0> {
-                self.0.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> bool {
-                self.0.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&$t0> {
-                self.0.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t0>) -> Option<&mut $t0> {
-                self.0.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t1> for $name {
-            fn alloc(&mut self, value: $t1) -> crate::shared::arena::HandleId<$t1> {
-                self.1.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t1,
-                reset: impl FnOnce(&mut $t1) -> ()
-            ) -> HandleId<$t1> {
-                self.1.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> bool {
-                self.1.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&$t1> {
-                self.1.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t1>) -> Option<&mut $t1> {
-                self.1.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t2> for $name {
-            fn alloc(&mut self, value: $t2) -> crate::shared::arena::HandleId<$t2> {
-                self.2.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t2,
-                reset: impl FnOnce(&mut $t2) -> ()
-            ) -> HandleId<$t2> {
-                self.2.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> bool {
-                self.2.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&$t2> {
-                self.2.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t2>) -> Option<&mut $t2> {
-                self.2.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t3> for $name {
-            fn alloc(&mut self, value: $t3) -> crate::shared::arena::HandleId<$t3> {
-                self.3.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t3,
-                reset: impl FnOnce(&mut $t3) -> ()
-            ) -> HandleId<$t3> {
-                self.3.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> bool {
-                self.3.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&$t3> {
-                self.3.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t3>) -> Option<&mut $t3> {
-                self.3.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t4> for $name {
-            fn alloc(&mut self, value: $t4) -> crate::shared::arena::HandleId<$t4> {
-                self.4.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t4,
-                reset: impl FnOnce(&mut $t4) -> ()
-            ) -> HandleId<$t4> {
-                self.4.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t4>) -> bool {
-                self.4.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t4>) -> Option<&$t4> {
-                self.4.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t4>) -> Option<&mut $t4> {
-                self.4.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t5> for $name {
-            fn alloc(&mut self, value: $t5) -> crate::shared::arena::HandleId<$t5> {
-                self.5.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t5,
-                reset: impl FnOnce(&mut $t5) -> ()
-            ) -> HandleId<$t5> {
-                self.5.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t5>) -> bool {
-                self.5.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t5>) -> Option<&$t5> {
-                self.5.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t5>) -> Option<&mut $t5> {
-                self.5.get_mut(handle)
-            }
-        }
-        impl crate::shared::arena::TypedArena<$t6> for $name {
-            fn alloc(&mut self, value: $t6) -> crate::shared::arena::HandleId<$t6> {
-                self.6.alloc(value)
-            }
-
-            fn alloc_temp(
-                &mut self,
-                init: impl FnOnce() -> $t6,
-                reset: impl FnOnce(&mut $t6) -> ()
-            ) -> HandleId<$t6> {
-                self.6.alloc_temp(init, reset)
-            }
-
-            fn dealloc(&mut self, handle: crate::shared::arena::HandleId<$t6>) -> bool {
-                self.6.dealloc(handle)
-            }
-
-            fn get(&self, handle: crate::shared::arena::HandleId<$t6>) -> Option<&$t6> {
-                self.6.get(handle)
-            }
-
-            fn get_mut(&mut self, handle: crate::shared::arena::HandleId<$t6>) -> Option<&mut $t6> {
-                self.6.get_mut(handle)
-            }
-        }
-    }
-);
+}
