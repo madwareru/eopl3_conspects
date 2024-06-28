@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 thiserror = "1.0"
+arena = { path = "./arena" }
+proc-macro-arena = { path = "./proc-macro-arena" }

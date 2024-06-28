@@ -2,7 +2,6 @@ extern crate core;
 
 use std::collections::HashMap;
 
-pub mod shared;
 pub mod chapter_1;
 pub mod chapter_2;
 pub mod chapter_3;

@@ -1,14 +1,14 @@
-use crate::declare_arena;
-use crate::shared::arena::{HandleId, ReleaseTemps, TempsCount, TypedArena};
+use arena::{HandleId, ReleaseTemps, TempsCount, TypedArena};
+use proc_macro_arena::declare_arena2;
 
-declare_arena! {
-    ImperativeLangArena(
-        0: String, // reusable strings for names
-        1: ImperativeEnvData,
-        2: LangValueData,
-        3: StatementData,
-        4: ExpressionData,
-        5: FunctionData
+declare_arena2! {
+    pub ImperativeLangArena(
+        String, // reusable strings for names
+        ImperativeEnvData,
+        LangValueData,
+        StatementData,
+        ExpressionData,
+        FunctionData
     )
 }
 
