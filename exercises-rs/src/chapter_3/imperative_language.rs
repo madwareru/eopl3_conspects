@@ -2,7 +2,7 @@ use arena::{HandleId, ReleaseTemps, TempsCount, TypedArena};
 use proc_macro_arena::declare_arena2;
 
 declare_arena2! {
-    pub ImperativeLangArena(
+    pub struct ImperativeLangArena(
         String, // reusable strings for names
         ImperativeEnvData,
         LangValueData,

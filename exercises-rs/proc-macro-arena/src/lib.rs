@@ -13,13 +13,11 @@ struct ArenaDeclaration {
 impl Parse for ArenaDeclaration {
     fn parse(input: ParseStream) -> Result<Self> {
         let visibility: Visibility = input.parse()?;
+        let _: Token![struct] = input.parse()?;
         let name: Ident = input.parse()?;
         let content;
         parenthesized!(content in input);
-        let tys = content.parse_terminated(
-            Type::parse,
-            Token![,]
-        )?;
+        let tys = content.parse_terminated(Type::parse, Token![,])?;
         Ok(Self {
             visibility,
             name,
@@ -30,11 +28,7 @@ impl Parse for ArenaDeclaration {
 
 #[proc_macro]
 pub fn declare_arena2(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ArenaDeclaration {
-        visibility,
-        name,
-        tys
-    } = parse_macro_input!(input as ArenaDeclaration);
+    let ArenaDeclaration { visibility, name, tys } = parse_macro_input!(input as ArenaDeclaration);
 
     let mut types_stream = quote!();
     let mut type_inits_stream = quote!();
@@ -85,16 +79,12 @@ pub fn declare_arena2(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     let expanded = quote! {
         #visibility struct #name ( #types_stream );
         impl #name {
-            pub fn new() -> Self {
-                Self(#type_inits_stream)
-            }
+            pub fn new() -> Self { Self(#type_inits_stream) }
         }
 
         impl arena::TempsCount for #name {
             type CountType = (#count_type_stream);
-            fn temps_count(&self) -> Self::CountType {
-                (#count_type_init_stream)
-            }
+            fn temps_count(&self) -> Self::CountType { (#count_type_init_stream) }
         }
 
         impl arena::ReleaseTemps for #name {

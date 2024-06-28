@@ -1,12 +1,9 @@
 use std::collections::HashSet;
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 
 pub struct HandleId<T>(usize, PhantomData<T>);
 impl<T> Clone for HandleId<T> {
-    fn clone(&self) -> Self {
-        Self(self.0, PhantomData)
-    }
+    fn clone(&self) -> Self { Self(self.0, PhantomData) }
 }
 impl<T> Copy for HandleId<T> {}
 
@@ -17,32 +14,6 @@ pub trait TempsCount {
 
 pub trait ReleaseTemps : TempsCount {
     fn release_temporaries(&mut self, target_count: Self::CountType);
-
-    fn auto_release(&mut self) -> AutoReleaseTemps<Self> where Self: Sized {
-        AutoReleaseTemps(self.temps_count(), self)
-    }
-}
-
-pub struct AutoReleaseTemps<'a, T: ReleaseTemps>(T::CountType, &'a mut T);
-
-impl<'a, T: ReleaseTemps> Drop for AutoReleaseTemps<'a, T> {
-    fn drop(&mut self) {
-        self.1.release_temporaries(self.0)
-    }
-}
-
-impl<'a, T: ReleaseTemps> Deref for AutoReleaseTemps<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.1
-    }
-}
-
-impl<'a, T: ReleaseTemps> DerefMut for AutoReleaseTemps<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.1
-    }
 }
 
 pub trait TypedArena<T> : Sized + ReleaseTemps {
@@ -61,8 +32,7 @@ pub trait TypedArena<T> : Sized + ReleaseTemps {
     fn get_mut(&mut self, handle: HandleId<T>) -> Option<&mut T>;
 }
 
-pub struct FlatArena<T>
-{
+pub struct FlatArena<T> {
     elements: Vec<T>,
     deleted: HashSet<usize>,
     free_list: Vec<HandleId<T>>,
@@ -133,25 +103,22 @@ impl<T> TypedArena<T> for FlatArena<T> {
     }
 
     fn get(&self, handle: HandleId<T>) -> Option<&T> {
-        if self.deleted.contains(&handle.0) || handle.0 > self.elements.len() - 1 {
-            None
-        } else {
-            self.elements.get(handle.0)
+        match self.deleted.get(&handle.0) {
+            None => self.elements.get(handle.0),
+            _ => None
         }
     }
 
     fn get_mut(&mut self, handle: HandleId<T>) -> Option<&mut T> {
-        if self.deleted.contains(&handle.0) || handle.0 > self.elements.len() - 1 {
-            None
-        } else {
-            self.elements.get_mut(handle.0)
+        match self.deleted.get(&handle.0) {
+            None => self.elements.get_mut(handle.0),
+            _ => None
         }
     }
 }
 
 impl<T> TempsCount for FlatArena<T> {
     type CountType = usize;
-
     fn temps_count(&self) -> Self::CountType {
         self.temp_allocations.len()
     }
