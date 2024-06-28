@@ -3,7 +3,6 @@ use syn::parse::{Parse, ParseStream, Result};
 
 use syn::{parse_macro_input, Ident, Token, Type, Visibility, parenthesized};
 
-
 struct ArenaDeclaration {
     visibility: Visibility,
     name: Ident,
@@ -27,7 +26,7 @@ impl Parse for ArenaDeclaration {
 }
 
 #[proc_macro]
-pub fn declare_arena2(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn declare_arena(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ArenaDeclaration { visibility, name, tys } = parse_macro_input!(input as ArenaDeclaration);
 
     let mut types_stream = quote!();
