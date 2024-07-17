@@ -1,6 +1,5 @@
 package exercises
 
-import java.util.Stack
 sealed class SExpr {
     data class Identifier(val data: String) : SExpr()
     sealed class List : SExpr() {
@@ -73,7 +72,7 @@ sealed class SExpr {
                 }
 
                 val scanIdentifier = {
-                    var tokenData = String(charArrayOf(next.value))
+                    var tokenData = charArrayOf(next.value).concatToString()
                     while (true) {
                         when (val c = charIterator.tryNext()) {
                             is Option.None -> stream.add(Token.Identifier(tokenData))
@@ -109,7 +108,7 @@ sealed class SExpr {
         fun parse(source: String): SExpr {
             val tokens = scan(source)
             var contents = mutableListOf<SExpr>()
-            val groupStack: Stack<MutableList<SExpr>> = Stack()
+            val groupStack: ArrayDeque<MutableList<SExpr>> = ArrayDeque()
             var justStarted = true
 
             var result: Option<SExpr> = none()
@@ -130,7 +129,7 @@ sealed class SExpr {
                 }
 
                 when (token) {
-                    Token.LParen -> { groupStack.push(contents); contents = mutableListOf() }
+                    Token.LParen -> { groupStack.addLast(contents); contents = mutableListOf() }
                     Token.RParen -> {
                         val resultContent = contents
                             .indices
@@ -138,7 +137,7 @@ sealed class SExpr {
                             .fold(List.Empty as List) { a, i -> a.pushFront(contents[i]) }
 
                         if (!groupStack.isEmpty()) {
-                            contents = groupStack.pop()
+                            contents = groupStack.removeLast()
                             contents.add(resultContent)
                         } else {
                             result = some { resultContent }

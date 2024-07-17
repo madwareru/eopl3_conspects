@@ -56,25 +56,7 @@ sealed class RibCageEnvExp<TKey, TVal> {
     data class Extend<TKey, TVal>(
         val bindings: Array<Pair<TKey, TVal>>,
         val rest: RibCageEnvExp<TKey, TVal>
-    ) : RibCageEnvExp<TKey, TVal>() {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as Extend<*, *>
-
-            if (!bindings.contentEquals(other.bindings)) return false
-            if (rest != other.rest) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = bindings.contentHashCode()
-            result = 31 * result + rest.hashCode()
-            return result
-        }
-    }
+    ) : RibCageEnvExp<TKey, TVal>()
 }
 
 fun <TKey, TValue, TOut> RibCageEnvExp<TKey, TValue>.applyImpl(k: TKey, action: (TValue) -> TOut): TOut {
