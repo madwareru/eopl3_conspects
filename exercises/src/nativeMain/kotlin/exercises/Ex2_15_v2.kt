@@ -14,14 +14,6 @@ interface LcExprFactory<TVar, TExpr: LcExpr<TVar>> {
     operator fun TExpr.times(rand: TExpr): TExpr
 }
 
-fun <TVar, TExpr: LcExpr<TVar>> LcExprFactory<TVar, TExpr>.variable(value: TVar) =
-    with(this) { !value }
-fun <TVar, TExpr: LcExpr<TVar>> LcExprFactory<TVar, TExpr>.lambda(boundVar: TVar, body: TExpr) =
-    with(this) { boundVar % body }
-
-fun <TVar, TExpr: LcExpr<TVar>> LcExprFactory<TVar, TExpr>.apply(rator: TExpr, rand: TExpr) =
-    with(this) { rator * rand }
-
 interface LcExpr<TVar> {
     fun <TOut> match(
         caseVar: (TVar) -> TOut,
