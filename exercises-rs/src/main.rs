@@ -1,10 +1,17 @@
 extern crate core;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub mod chapter_1;
 pub mod chapter_2;
 pub mod chapter_3;
+
+#[derive(Clone)]
+enum VoxelModel<TData : Copy, const CHUNK_SIZE: usize> {
+    Leaf(TData),
+    Node(Rc<[[VoxelModel<TData, CHUNK_SIZE>; CHUNK_SIZE]; CHUNK_SIZE]>)
+}
 
 #[macro_export]
 macro_rules! do_tests(

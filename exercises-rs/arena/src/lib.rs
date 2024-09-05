@@ -3,26 +3,28 @@ use std::marker::PhantomData;
 
 pub struct HandleId<T>(usize, PhantomData<T>);
 impl<T> Clone for HandleId<T> {
-    fn clone(&self) -> Self { Self(self.0, PhantomData) }
+    fn clone(&self) -> Self {
+        Self(self.0, PhantomData)
+    }
 }
 impl<T> Copy for HandleId<T> {}
 
 pub trait TempsCount {
-    type CountType : Copy;
+    type CountType: Copy;
     fn temps_count(&self) -> Self::CountType;
 }
 
-pub trait ReleaseTemps : TempsCount {
+pub trait ReleaseTemps: TempsCount {
     fn release_temporaries(&mut self, target_count: Self::CountType);
 }
 
-pub trait TypedArena<T> : Sized + ReleaseTemps {
+pub trait TypedArena<T>: Sized + ReleaseTemps {
     fn alloc(&mut self, value: T) -> HandleId<T>;
 
     fn alloc_temp(
         &mut self,
         init: impl FnOnce() -> T,
-        reset: impl FnOnce(&mut T) -> ()
+        reset: impl FnOnce(&mut T) -> (),
     ) -> HandleId<T>;
 
     fn dealloc(&mut self, handle: HandleId<T>) -> bool;
@@ -36,7 +38,7 @@ pub struct FlatArena<T> {
     elements: Vec<T>,
     deleted: HashSet<usize>,
     free_list: Vec<HandleId<T>>,
-    temp_allocations: Vec<HandleId<T>>
+    temp_allocations: Vec<HandleId<T>>,
 }
 
 impl<T> FlatArena<T> {
@@ -45,7 +47,7 @@ impl<T> FlatArena<T> {
             elements: Vec::new(),
             deleted: HashSet::new(),
             free_list: Vec::new(),
-            temp_allocations: Vec::new()
+            temp_allocations: Vec::new(),
         }
     }
 
@@ -74,7 +76,7 @@ impl<T> TypedArena<T> for FlatArena<T> {
     fn alloc_temp(
         &mut self,
         init: impl FnOnce() -> T,
-        reset: impl FnOnce(&mut T) -> ()
+        reset: impl FnOnce(&mut T) -> (),
     ) -> HandleId<T> {
         let id = match self.alloc_from_free_list() {
             None => {
@@ -93,10 +95,7 @@ impl<T> TypedArena<T> for FlatArena<T> {
     }
 
     fn dealloc(&mut self, handle: HandleId<T>) -> bool {
-        if self.deleted.contains(&handle.0) || handle.0 > self.elements.len() - 1 {
-            false
-        } else {
-            self.deleted.insert(handle.0);
+        handle.0 < self.elements.len() && self.deleted.insert(handle.0) && {
             self.free_list.push(handle);
             true
         }
@@ -105,14 +104,14 @@ impl<T> TypedArena<T> for FlatArena<T> {
     fn get(&self, handle: HandleId<T>) -> Option<&T> {
         match self.deleted.get(&handle.0) {
             None => self.elements.get(handle.0),
-            _ => None
+            _ => None,
         }
     }
 
     fn get_mut(&mut self, handle: HandleId<T>) -> Option<&mut T> {
         match self.deleted.get(&handle.0) {
             None => self.elements.get_mut(handle.0),
-            _ => None
+            _ => None,
         }
     }
 }

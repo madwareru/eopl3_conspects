@@ -29,7 +29,7 @@ kotlin {
     }
     sourceSets {
         commonMain.dependencies {
-            implementation("com.github.h0tk3y.betterParse:better-parse:0.4.4") // library shared for all source sets
+            implementation("com.github.h0tk3y.betterParse:better-parse:0.4.4")
         }
         val nativeMain by getting
         val nativeTest by getting

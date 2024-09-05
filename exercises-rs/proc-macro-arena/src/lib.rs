@@ -1,4 +1,4 @@
-use quote::{quote};
+use quote::quote;
 use syn::parse::{Parse, ParseStream, Result};
 
 use syn::{parse_macro_input, Ident, Token, Type, Visibility, parenthesized};
@@ -11,17 +11,19 @@ struct ArenaDeclaration {
 
 impl Parse for ArenaDeclaration {
     fn parse(input: ParseStream) -> Result<Self> {
-        let visibility: Visibility = input.parse()?;
-        let _: Token![struct] = input.parse()?;
-        let name: Ident = input.parse()?;
-        let content;
-        parenthesized!(content in input);
-        let tys = content.parse_terminated(Type::parse, Token![,])?;
-        Ok(Self {
-            visibility,
-            name,
-            tys: tys.into_iter().collect(),
-        })
+        let visibility = input.parse()?;
+        let name = {
+            let _: Token![struct] = input.parse()?;
+            input.parse()?
+        };
+        let tys = {
+            let content; parenthesized!(content in input);
+            content
+                .parse_terminated(Type::parse, Token![,])?
+                .into_iter()
+                .collect()
+        };
+        Ok(Self { visibility, name, tys })
     }
 }
 
